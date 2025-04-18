@@ -260,12 +260,14 @@ def handle_stats_command(ack, body, client):
     except Exception as e:
         logger.error(f"Error posting stats message (publicly: {post_publicly}): {e}")
 
-def handle_history_command(ack, body, say):
-    """Handles the /tacos_history command."""
+def handle_history_command(ack, body, say, client):
+    """Handles the /tacos_history command by sending an ephemeral message."""
     ack()
     text = body.get("text", "").strip()
     calling_user_id = body["user_id"]
-    thread_ts = body.get("thread_ts") # Get thread timestamp
+    channel_id = body["channel_id"] # Get channel for ephemeral message
+    # thread_ts = body.get("thread_ts") # Ephemeral messages don't support threads
+
     parts = text.split()
 
     lines = config.DEFAULT_HISTORY_LINES
@@ -292,21 +294,40 @@ def handle_history_command(ack, body, say):
                     # Invalid number, ignore, use default lines
                     pass
             elif arg2:
-                 _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg2}`. Expected number of lines after @user. Using default {config.DEFAULT_HISTORY_LINES} lines.", logger)
+                 # Use ephemeral error
+                 error_text = f":warning: Invalid argument: `{arg2}`. Expected number of lines after @user. Using default {config.DEFAULT_HISTORY_LINES} lines."
+                 try:
+                     client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+                 except Exception as e:
+                    logger.error(f"Error sending ephemeral error message: {e}")
                  return # Stop processing if error
         elif arg1.isdigit():
             # First argument is lines: caller is giver
             try:
                 lines = int(arg1)
             except ValueError:
-                 _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected @user or number of lines. Showing your giving history.", logger)
+                 # Use ephemeral error
+                 error_text = f":warning: Invalid argument: `{arg1}`. Expected @user or number of lines. Showing your giving history."
+                 try:
+                     client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+                 except Exception as e:
+                    logger.error(f"Error sending ephemeral error message: {e}")
                  return # Stop processing
             if arg2:
-                # Should use DM here too
-                 _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg2}`. Only expecting number of lines here. Ignoring extra argument.", logger)
+                 # Use ephemeral warning
+                 warning_text = f":warning: Invalid argument: `{arg2}`. Only expecting number of lines here. Ignoring extra argument."
+                 try:
+                     client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=warning_text)
+                 except Exception as e:
+                     logger.error(f"Error sending ephemeral warning message: {e}")
                  # Don't return, just ignore arg2
         else:
-             _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected @user or number of lines. Showing your giving history.", logger)
+             # Use ephemeral error
+             error_text = f":warning: Invalid argument: `{arg1}`. Expected @user or number of lines. Showing your giving history."
+             try:
+                 client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+             except Exception as e:
+                 logger.error(f"Error sending ephemeral error message: {e}")
              return # Stop processing
 
     # Ensure lines is within reasonable bounds (e.g., 1-50)
@@ -315,13 +336,19 @@ def handle_history_command(ack, body, say):
     history = database.get_history(lines=lines, recipient_id=recipient_filter_id, giver_id=giver_filter_id)
 
     if not history:
-        # Use DM for errors
+        # Use ephemeral message for errors
+        error_text = ""
         if recipient_filter_id:
-             _send_error_dm(say.client, calling_user_id, f"No taco history found for <@{recipient_filter_id}>.", logger)
+            error_text = f":warning: No taco history found for <@{recipient_filter_id}>."
         elif giver_filter_id:
-             _send_error_dm(say.client, calling_user_id, "You haven't given any tacos recently!", logger)
+            error_text = ":warning: You haven't given any tacos recently!"
         else: # Should not happen with current logic, but for completeness
-             _send_error_dm(say.client, calling_user_id, "No taco history found.", logger)
+            error_text = ":warning: No taco history found."
+
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral 'no history' message: {e}")
         return
 
     # Build the success message
@@ -355,15 +382,21 @@ def handle_history_command(ack, body, say):
         else: # Giver's view (default)
              message_lines.append(f"- `[{ts_formatted}]` Gave {entry['amount']} to <@{entry['recipient_id']}>{source_channel_text}: _{entry['note']}_ ")
 
-    # Join message lines and send (potentially threaded)
-    say(title + "\n".join(message_lines), thread_ts=thread_ts)
+    # Join message lines and send ephemerally
+    success_text = title + "\n".join(message_lines)
+    try:
+        client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=success_text)
+    except Exception as e:
+        logger.error(f"Error sending ephemeral history message: {e}")
 
-def handle_received_command(ack, body, say):
-    """Handles the /taco received command."""
+def handle_received_command(ack, body, say, client):
+    """Handles the /taco received command by sending an ephemeral message."""
     ack()
     text = body.get("text", "").strip()
     calling_user_id = body["user_id"]
-    thread_ts = body.get("thread_ts") # Get thread timestamp
+    channel_id = body["channel_id"] # Get channel for ephemeral message
+    # thread_ts = body.get("thread_ts") # Ephemeral messages don't support threads
+
     parts = text.split()
 
     lines = config.DEFAULT_HISTORY_LINES
@@ -375,13 +408,28 @@ def handle_received_command(ack, body, say):
             try:
                 lines = int(arg1)
             except ValueError:
-                _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected number of lines. Using default {config.DEFAULT_HISTORY_LINES}.", logger)
+                # Use ephemeral error
+                error_text = f":warning: Invalid argument: `{arg1}`. Expected number of lines. Using default {config.DEFAULT_HISTORY_LINES}."
+                try:
+                    client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+                except Exception as e:
+                    logger.error(f"Error sending ephemeral error message: {e}")
                 return # Stop processing
         else:
-             _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected number of lines. Using default {config.DEFAULT_HISTORY_LINES}.", logger)
-             return # Stop processing
+            # Use ephemeral error
+            error_text = f":warning: Invalid argument: `{arg1}`. Expected number of lines. Using default {config.DEFAULT_HISTORY_LINES}."
+            try:
+                client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+            except Exception as e:
+                logger.error(f"Error sending ephemeral error message: {e}")
+            return # Stop processing
         if len(parts) > 1:
-            _send_error_dm(say.client, calling_user_id, f"Too many arguments. Only expecting optional number of lines. Ignoring extra arguments.", logger)
+            # Use ephemeral warning (don't return)
+            warning_text = f":warning: Too many arguments. Only expecting optional number of lines. Ignoring extra arguments."
+            try:
+                client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=warning_text)
+            except Exception as e:
+                logger.error(f"Error sending ephemeral warning message: {e}")
             # Don't return, just ignore extra args
 
     # Ensure lines is within reasonable bounds (e.g., 1-50)
@@ -391,7 +439,12 @@ def handle_received_command(ack, body, say):
     history = database.get_history(lines=lines, recipient_id=calling_user_id, giver_id=None)
 
     if not history:
-        _send_error_dm(say.client, calling_user_id, "You haven't received any tacos recently!", logger)
+        # Use ephemeral message
+        error_text = ":warning: You haven't received any tacos recently!"
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral 'no history' message: {e}")
         return
 
     # Build the success message
@@ -410,8 +463,12 @@ def handle_received_command(ack, body, say):
 
         message_lines.append(f"- `[{ts_formatted}]` Received {entry['amount']} from <@{entry['giver_id']}>{source_channel_text}: _{entry['note']}_")
 
-    # Join message lines and send (potentially threaded)
-    say(title + "\\n".join(message_lines), thread_ts=thread_ts)
+    # Join message lines and send ephemerally
+    success_text = title + "\\n".join(message_lines)
+    try:
+        client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=success_text)
+    except Exception as e:
+         logger.error(f"Error sending ephemeral received history message: {e}")
 
 def handle_give_command(ack, body, say, client):
     """Handles the /tacos_give command."""
@@ -423,7 +480,12 @@ def handle_give_command(ack, body, say, client):
     parts = text.split(maxsplit=2)
 
     if len(parts) < 3:
-        _send_error_dm(client, giver_id, f"Usage: `/tacos_give <amount> <@username> <note>`", logger)
+        # Send ephemeral error
+        error_text = f":warning: Usage: `/tacos_give <amount> <@username> <note>`"
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral usage error: {e}")
         return
 
     amount_str, recipient_mention, note = parts
@@ -432,25 +494,43 @@ def handle_give_command(ack, body, say, client):
     try:
         amount = int(amount_str)
         if amount <= 0:
-            _send_error_dm(client, giver_id, "Amount must be a positive whole number.", logger)
+            # Send ephemeral error
+            error_text = ":warning: Amount must be a positive whole number."
+            try:
+                client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+            except Exception as e:
+                logger.error(f"Error sending ephemeral amount error: {e}")
             return
     except ValueError:
-        _send_error_dm(client, giver_id, f"Invalid amount: `{amount_str}`. Please provide a positive whole number.", logger)
+        # Send ephemeral error
+        error_text = f":warning: Invalid amount: `{amount_str}`. Please provide a positive whole number."
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral invalid amount error: {e}")
         return
 
     # --- Validate recipient using the new lookup function ---
     recipient_id = get_user_id_from_mention(client, recipient_mention, logger)
 
     if not recipient_id:
-        # Updated error message for lookup failure
-        error_text = f"Could not find a unique user matching `{recipient_mention}`. Please use the standard `@mention` format (selecting the user from the popup) or ensure the display name is correct."
-        _send_error_dm(client, giver_id, error_text, logger)
+        # Updated error message for lookup failure - Send ephemeral error
+        error_text = f":warning: Could not find a unique user matching `{recipient_mention}`. Please use the standard `@mention` format (selecting the user from the popup) or ensure the display name is correct."
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral user lookup error: {e}")
         return
 
     # --- Business Logic Checks ---
     # 1. No self-giving
     if giver_id == recipient_id:
-        _send_error_dm(client, giver_id, "You can't give tacos to yourself! Sharing is caring.", logger)
+        # Send ephemeral error
+        error_text = ":warning: You can't give tacos to yourself! Sharing is caring."
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral self-give error: {e}")
         return
 
     # 2. Check daily limit (rolling 24h)
@@ -458,11 +538,21 @@ def handle_give_command(ack, body, say, client):
         given_last_24h = database.get_tacos_given_last_24h(giver_id)
         if given_last_24h + amount > config.DAILY_TACO_LIMIT:
             remaining = config.DAILY_TACO_LIMIT - given_last_24h
-            _send_error_dm(client, giver_id, f"You have given {given_last_24h} tacos in the last 24 hours. You can only give {remaining} more.", logger)
+            # Send ephemeral error
+            error_text = f":warning: You have given {given_last_24h} tacos in the last 24 hours. You can only give {remaining} more."
+            try:
+                client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+            except Exception as e:
+                logger.error(f"Error sending ephemeral limit error: {e}")
             return
     except Exception as e:
         logger.error(f"Error checking daily limit for {giver_id}: {e}")
-        _send_error_dm(client, giver_id, "There was an internal error checking your taco limit. Please try again later.", logger)
+        # Send ephemeral error
+        error_text = ":warning: There was an internal error checking your taco limit. Please try again later."
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral internal limit check error: {e}")
         return
 
     # --- Add transaction ---
@@ -483,11 +573,12 @@ def handle_give_command(ack, body, say, client):
         emoji = "taco" # Use a static emoji for now
 
         # Notify giver (ephemeral in original channel - should work if previous validation passed)
+        giver_success_text = f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
         try:
             client.chat_postEphemeral(
                 channel=channel_id,
                 user=giver_id,
-                text=f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
+                text=giver_success_text
             )
         except SlackApiError as e:
             # Log error, but don't stop other notifications if ephemeral fails
@@ -558,8 +649,12 @@ def handle_give_command(ack, body, say, client):
                  logger.error(f"Unexpected error posting to announcement channel #{announce_channel_name}: {e}")
 
     else:
-        # General failure adding transaction
-        _send_error_dm(client, giver_id, "Sorry, there was an internal error recording your taco transaction. Please try again later.", logger)
+        # General failure adding transaction - Send ephemeral error
+        error_text = ":warning: Sorry, there was an internal error recording your taco transaction. Please try again later."
+        try:
+            client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
+        except Exception as e:
+            logger.error(f"Error sending ephemeral transaction failure error: {e}")
 
 def _send_error_dm(client, user_id, text, logger):
     """Helper function to send an error message via DM."""

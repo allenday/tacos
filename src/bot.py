@@ -153,13 +153,13 @@ def handle_stats_slash_command(ack, body, say, client):
 def handle_history_slash_command(ack, body, say, client):
     logger.info(f"Received /tacos_history command: {body.get('text')}")
     # Pass the text directly to the handler (it expects args like [@user] [lines])
-    commands.handle_history_command(ack, body, say)
+    commands.handle_history_command(ack, body, say, client)
 
 @app.command("/tacos_received")
 def handle_received_slash_command(ack, body, say, client):
     logger.info(f"Received /tacos_received command: {body.get('text')}")
     # Pass the text directly to the handler (it expects args like [lines])
-    commands.handle_received_command(ack, body, say)
+    commands.handle_received_command(ack, body, say, client)
 
 @app.command("/tacos_help")
 def handle_help_slash_command(ack, body, say, client):
