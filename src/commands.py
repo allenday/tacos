@@ -132,9 +132,6 @@ Here are the available commands:
 * `/tacos_remaining [@user]`
   Check how many tacos you (or `@user`, if specified) have left to give in the next 24 hours. Responds privately.
 
-*React with `:{config.TACO_REACTION_EMOJI}:` to a message*
-  This will start a DM conversation with you to give tacos to the message author.
-
 * `/tacos_help`
   Show this help message (visible only to you).
 
