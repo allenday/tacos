@@ -144,31 +144,31 @@ def handle_tacos_command(ack, body, say, client):
     commands.handle_give_command(ack, body, say, client)
 
 @app.command("/tacos_stats")
-def handle_stats_slash_command(ack, body, client):
+def handle_stats_slash_command(ack, body, say, client):
     logger.info("Received /tacos_stats command")
     # Body text is ignored for stats/leaderboard
     commands.handle_stats_command(ack, body, client)
 
 @app.command("/tacos_history")
-def handle_history_slash_command(ack, body, say):
+def handle_history_slash_command(ack, body, say, client):
     logger.info(f"Received /tacos_history command: {body.get('text')}")
     # Pass the text directly to the handler (it expects args like [@user] [lines])
     commands.handle_history_command(ack, body, say)
 
 @app.command("/tacos_received")
-def handle_received_slash_command(ack, body, say):
+def handle_received_slash_command(ack, body, say, client):
     logger.info(f"Received /tacos_received command: {body.get('text')}")
     # Pass the text directly to the handler (it expects args like [lines])
     commands.handle_received_command(ack, body, say)
 
 @app.command("/tacos_help")
-def handle_help_slash_command(ack, body, client):
+def handle_help_slash_command(ack, body, say, client):
     logger.info("Received /tacos_help command")
     # Body text is ignored for help
-    commands.handle_help_command(ack, body, client) # Pass client directly
+    commands.handle_help_command(ack, body, client)
 
 @app.command("/tacos_remaining")
-def handle_remaining_slash_command(ack, body, client):
+def handle_remaining_slash_command(ack, body, say, client):
     logger.info(f"Received /tacos_remaining command: {body.get('text')}")
     commands.handle_remaining_command(ack, body, client)
 
