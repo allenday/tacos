@@ -261,23 +261,157 @@ def handle_stats_command(ack, body, client):
         logger.error(f"Error posting stats message (publicly: {post_publicly}): {e}")
 
 def handle_history_command(ack, body, say):
-    # ... existing code ...
-    pass
+    """Handles the /tacos_history command."""
+    ack()
+    text = body.get("text", "").strip()
+    calling_user_id = body["user_id"]
+    thread_ts = body.get("thread_ts") # Get thread timestamp
+    parts = text.split()
 
-    # ... existing code ...
-    pass 
+    lines = config.DEFAULT_HISTORY_LINES
+    recipient_filter_id = None
+    # Default: filter history by the user who invoked the command (giver)
+    giver_filter_id = calling_user_id
 
-def _send_error_dm(client, user_id, text, logger):
-    """Helper function to send an error message via DM."""
-    try:
-        im_response = client.conversations_open(users=user_id)
-        if im_response and im_response.get("ok"):
-            dm_channel_id = im_response["channel"]["id"]
-            client.chat_postMessage(channel=dm_channel_id, text=f":warning: Error: {text}")
+    arg1 = parts[0] if parts else None
+    arg2 = parts[1] if len(parts) > 1 else None
+
+    # Parse arguments: /taco history [@user] [lines] or /taco history [lines]
+    # If @user is present, we show history where they are the RECIPIENT.
+    # Otherwise, we show history where the caller is the GIVER.
+    if arg1:
+        maybe_user = parse_user_mention(arg1)
+        if maybe_user:
+            # First argument is a user: filter by recipient
+            recipient_filter_id = maybe_user
+            giver_filter_id = None # Clear giver filter
+            if arg2 and arg2.isdigit():
+                try:
+                    lines = int(arg2)
+                except ValueError:
+                    # Invalid number, ignore, use default lines
+                    pass
+            elif arg2:
+                 _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg2}`. Expected number of lines after @user. Using default {config.DEFAULT_HISTORY_LINES} lines.", logger)
+                 return # Stop processing if error
+        elif arg1.isdigit():
+            # First argument is lines: caller is giver
+            try:
+                lines = int(arg1)
+            except ValueError:
+                 _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected @user or number of lines. Showing your giving history.", logger)
+                 return # Stop processing
+            if arg2:
+                # Should use DM here too
+                 _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg2}`. Only expecting number of lines here. Ignoring extra argument.", logger)
+                 # Don't return, just ignore arg2
         else:
-            logger.error(f"Could not open IM channel for user {user_id} to send error: {im_response.get('error')}")
-    except Exception as e:
-        logger.error(f"Error sending error DM to user {user_id}: {e}")
+             _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected @user or number of lines. Showing your giving history.", logger)
+             return # Stop processing
+
+    # Ensure lines is within reasonable bounds (e.g., 1-50)
+    lines = max(1, min(lines, 50))
+
+    history = database.get_history(lines=lines, recipient_id=recipient_filter_id, giver_id=giver_filter_id)
+
+    if not history:
+        # Use DM for errors
+        if recipient_filter_id:
+             _send_error_dm(say.client, calling_user_id, f"No taco history found for <@{recipient_filter_id}>.", logger)
+        elif giver_filter_id:
+             _send_error_dm(say.client, calling_user_id, "You haven't given any tacos recently!", logger)
+        else: # Should not happen with current logic, but for completeness
+             _send_error_dm(say.client, calling_user_id, "No taco history found.", logger)
+        return
+
+    # Build the success message
+    title = ""
+    if recipient_filter_id:
+        title = f":taco: *Recent Taco History for <@{recipient_filter_id}>* (Received) :taco:\n\n"
+    elif giver_filter_id:
+        title = f":taco: *Your Recent Taco Giving History* :taco:\n\n"
+    else:
+        # Fallback message, should ideally not be reached with current logic
+        title = f":taco: *Recent Taco History* :taco:\n\n"
+
+    message_lines = []
+    for entry in history:
+        ts_str = entry['timestamp']
+        try:
+            # Attempt to parse ISO format timestamp for cleaner formatting
+            ts_dt = datetime.datetime.fromisoformat(ts_str.replace(' ', 'T'))
+            # Format like: Aug 07 15:30
+            ts_formatted = ts_dt.strftime('%b %d %H:%M')
+        except:
+             # Fallback to simpler string splitting if parsing fails
+             ts_formatted = ts_str.split('.')[0].replace('T', ' ') if isinstance(ts_str, str) else str(ts_str)
+
+        # Include source channel if available
+        source_channel_text = f" in <#{entry['source_channel_id']}>" if entry['source_channel_id'] else ""
+
+        # Adjust message based on whether it's giver or recipient view
+        if recipient_filter_id:
+             message_lines.append(f"- `[{ts_formatted}]` Received {entry['amount']} from <@{entry['giver_id']}>{source_channel_text}: _{entry['note']}_ ")
+        else: # Giver's view (default)
+             message_lines.append(f"- `[{ts_formatted}]` Gave {entry['amount']} to <@{entry['recipient_id']}>{source_channel_text}: _{entry['note']}_ ")
+
+    # Join message lines and send (potentially threaded)
+    say(title + "\n".join(message_lines), thread_ts=thread_ts)
+
+def handle_received_command(ack, body, say):
+    """Handles the /taco received command."""
+    ack()
+    text = body.get("text", "").strip()
+    calling_user_id = body["user_id"]
+    thread_ts = body.get("thread_ts") # Get thread timestamp
+    parts = text.split()
+
+    lines = config.DEFAULT_HISTORY_LINES
+
+    # Parse arguments: /taco received [lines]
+    if parts:
+        arg1 = parts[0]
+        if arg1.isdigit():
+            try:
+                lines = int(arg1)
+            except ValueError:
+                _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected number of lines. Using default {config.DEFAULT_HISTORY_LINES}.", logger)
+                return # Stop processing
+        else:
+             _send_error_dm(say.client, calling_user_id, f"Invalid argument: `{arg1}`. Expected number of lines. Using default {config.DEFAULT_HISTORY_LINES}.", logger)
+             return # Stop processing
+        if len(parts) > 1:
+            _send_error_dm(say.client, calling_user_id, f"Too many arguments. Only expecting optional number of lines. Ignoring extra arguments.", logger)
+            # Don't return, just ignore extra args
+
+    # Ensure lines is within reasonable bounds (e.g., 1-50)
+    lines = max(1, min(lines, 50))
+
+    # Fetch history where the calling user is the recipient
+    history = database.get_history(lines=lines, recipient_id=calling_user_id, giver_id=None)
+
+    if not history:
+        _send_error_dm(say.client, calling_user_id, "You haven't received any tacos recently!", logger)
+        return
+
+    # Build the success message
+    title = f":taco: *Your Recent Taco Receiving History* :taco:\\n\\n"
+
+    message_lines = []
+    for entry in history:
+        ts_str = entry['timestamp']
+        try:
+            ts_dt = datetime.datetime.fromisoformat(ts_str.replace(' ', 'T'))
+            ts_formatted = ts_dt.strftime('%b %d %H:%M')
+        except:
+            ts_formatted = ts_str.split('.')[0].replace('T', ' ') if isinstance(ts_str, str) else str(ts_str)
+
+        source_channel_text = f" in <#{entry['source_channel_id']}>" if entry['source_channel_id'] else ""
+
+        message_lines.append(f"- `[{ts_formatted}]` Received {entry['amount']} from <@{entry['giver_id']}>{source_channel_text}: _{entry['note']}_")
+
+    # Join message lines and send (potentially threaded)
+    say(title + "\\n".join(message_lines), thread_ts=thread_ts)
 
 def handle_give_command(ack, body, say, client):
     """Handles the /tacos_give command."""
@@ -426,5 +560,17 @@ def handle_give_command(ack, body, say, client):
     else:
         # General failure adding transaction
         _send_error_dm(client, giver_id, "Sorry, there was an internal error recording your taco transaction. Please try again later.", logger)
+
+def _send_error_dm(client, user_id, text, logger):
+    """Helper function to send an error message via DM."""
+    try:
+        im_response = client.conversations_open(users=user_id)
+        if im_response and im_response.get("ok"):
+            dm_channel_id = im_response["channel"]["id"]
+            client.chat_postMessage(channel=dm_channel_id, text=f":warning: Error: {text}")
+        else:
+            logger.error(f"Could not open IM channel for user {user_id} to send error: {im_response.get('error')}")
+    except Exception as e:
+        logger.error(f"Error sending error DM to user {user_id}: {e}")
 
 # ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command) 
