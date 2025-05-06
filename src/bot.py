@@ -1,5 +1,6 @@
 import logging
 import sys
+import re  # Add import for regex
 import datetime # Added for timestamp formatting in completion message
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -30,107 +31,108 @@ app = App(token=config.SLACK_BOT_TOKEN)
 
 # --- In-memory state for reaction flows --- #
 # Structure: { giver_user_id: { step: str, recipient_id: str, original_channel_id: str, original_ts: str, amount: int|None } }
-# reaction_flows = {}
+reaction_flows = {}
+
+processed_reactions = {}
 
 # --- Helper Function for Transaction Completion --- #
-# def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, original_channel_id, original_message_ts):
-#     """Handles the final steps: DB insert, notifications, announcements (handles threads)."""
-#     success = database.add_transaction(
-#         giver_id=giver_id,
-#         recipient_id=recipient_id,
-#         amount=amount,
-#         note=note,
-#         source_channel_id=original_channel_id
-#     )
-#     if not success:
-#         try:
-#             # Notify giver in DM about the failure
-#             im_response = client.conversations_open(users=giver_id)
-#             if im_response and im_response.get("ok"):
-#                 client.chat_postMessage(
-#                     channel=im_response["channel"]["id"],
-#                     text="Sorry, there was an error recording your taco transaction. Please try again."
-#                 )
-#         except Exception as e:
-#              logger.error(f"Failed to notify giver {giver_id} about transaction failure: {e}")
-#         return False # Indicate failure
-#
-#     # Transaction added successfully, proceed with notifications
-#     taco_word = "taco" if amount == 1 else "tacos"
-#     # Use config.TACO_REACTION_EMOJI here if needed, or revert to static :taco:
-#     emoji = getattr(config, 'TACO_REACTION_EMOJI', 'taco') # Safely get emoji
-#     completion_text = f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
-#     recipient_text = f"You received {amount} :{emoji}: from <@{giver_id}>! Reason: {note}"
-#     public_text = f":{emoji}: <@{giver_id}> gave {amount} {taco_word} to <@{recipient_id}>! Reason: {note}"
-#
-#     # 1. Notify giver (in DM, since reaction flow happens there)
-#     try:
-#         im_response = client.conversations_open(users=giver_id)
-#         if im_response and im_response.get("ok"):
-#             client.chat_postMessage(
-#                 channel=im_response["channel"]["id"],
-#                 text=completion_text
-#             )
-#     except Exception as e:
-#         logger.error(f"Error sending completion DM to giver {giver_id}: {e}")
-#
-#     # 2. Notify recipient (DM)
-#     try:
-#         im_response = client.conversations_open(users=recipient_id)
-#         if im_response and im_response.get("ok"):
-#             client.chat_postMessage(
-#                 channel=im_response["channel"]["id"],
-#                 text=recipient_text
-#             )
-#         else:
-#              logger.error(f"Could not open IM channel for recipient {recipient_id}: {im_response.get('error')}")
-#     except Exception as e:
-#         logger.error(f"Error sending DM notification to recipient {recipient_id}: {e}")
-#
-#     # 3. Announce in original channel (potentially in thread)
-#     try:
-#         client.chat_postMessage(
-#             channel=original_channel_id,
-#             text=public_text,
-#             thread_ts=original_message_ts # Reply in thread if it originated there
-#         )
-#     except SlackApiError as e:
-#         logger.error(f"Error posting public message to original channel {original_channel_id} (ts: {original_message_ts}): {e}")
-#
-#     # 4. Announce in central tacos channel (if different and configured)
-#     announce_channel_name = config.TACO_ANNOUNCE_CHANNEL
-#     if announce_channel_name:
-#         # Get channel ID for comparison (more reliable than name)
-#         try:
-#             # Find the announcement channel ID (requires channels:read scope)
-#             announce_channel_id = None
-#             for page in client.conversations_list(types="public_channel", limit=200):
-#                 for channel in page["channels"]:
-#                     if channel["name"] == announce_channel_name:
-#                         announce_channel_id = channel["id"]
-#                         break
-#                 if announce_channel_id:
-#                     break
-#
-#             if announce_channel_id and announce_channel_id != original_channel_id:
-#                 client.chat_postMessage(
-#                     channel=announce_channel_id, # Use channel ID
-#                     text=public_text
-#                     # Note: We DON'T post to the thread in the announcement channel,
-#                     # just the main channel announcement.
-#                 )
-#             elif not announce_channel_id:
-#                  logger.warning(f"Announcement channel '#{announce_channel_name}' not found.")
-#
-#         except SlackApiError as e:
-#             if e.response["error"] == "missing_scope" and "channels:read" in str(e):
-#                 logger.warning("Missing 'channels:read' scope to look up announcement channel ID by name. Cannot post announcement.")
-#             else:
-#                 logger.error(f"Error posting to announcement channel #{announce_channel_name}: {e}")
-#         except Exception as e:
-#              logger.error(f"Unexpected error looking up or posting to announcement channel #{announce_channel_name}: {e}")
-#
-#     return True # Indicate success
+def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, original_channel_id, original_message_ts):
+    """Handles the final steps: DB insert, notifications, announcements (handles threads)."""
+    success = database.add_transaction(
+        giver_id=giver_id,
+        recipient_id=recipient_id,
+        amount=amount,
+        note=note,
+        source_channel_id=original_channel_id
+    )
+    if not success:
+        try:
+            # Notify giver in DM about the failure
+            im_response = client.conversations_open(users=giver_id)
+            if im_response and im_response.get("ok"):
+                client.chat_postMessage(
+                    channel=im_response["channel"]["id"],
+                    text="Sorry, there was an error recording your taco transaction. Please try again."
+                )
+        except Exception as e:
+             logger.error(f"Failed to notify giver {giver_id} about transaction failure: {e}")
+        return False # Indicate failure
+
+    # Transaction added successfully, proceed with notifications
+    taco_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
+    emoji = commands.get_emoji()
+    completion_text = f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
+    recipient_text = f"You received {amount} :{emoji}: from <@{giver_id}>! Reason: {note}"
+    public_text = f":{emoji}: <@{giver_id}> gave {amount} {taco_word} to <@{recipient_id}>! Reason: {note}"
+
+    # 1. Notify giver (in DM, since reaction flow happens there)
+    try:
+        im_response = client.conversations_open(users=giver_id)
+        if im_response and im_response.get("ok"):
+            client.chat_postMessage(
+                channel=im_response["channel"]["id"],
+                text=completion_text
+            )
+    except Exception as e:
+        logger.error(f"Error sending completion DM to giver {giver_id}: {e}")
+
+    # 2. Notify recipient (DM)
+    try:
+        im_response = client.conversations_open(users=recipient_id)
+        if im_response and im_response.get("ok"):
+            client.chat_postMessage(
+                channel=im_response["channel"]["id"],
+                text=recipient_text
+            )
+        else:
+             logger.error(f"Could not open IM channel for recipient {recipient_id}: {im_response.get('error')}")
+    except Exception as e:
+        logger.error(f"Error sending DM notification to recipient {recipient_id}: {e}")
+
+    # 3. Announce in original channel (potentially in thread)
+    try:
+        client.chat_postMessage(
+            channel=original_channel_id,
+            text=public_text,
+            thread_ts=original_message_ts # Reply in thread if it originated there
+        )
+    except SlackApiError as e:
+        logger.error(f"Error posting public message to original channel {original_channel_id} (ts: {original_message_ts}): {e}")
+
+    # 4. Announce in central tacos channel (if different and configured)
+    announce_channel_name = config.TACO_ANNOUNCE_CHANNEL
+    if announce_channel_name:
+        # Get channel ID for comparison (more reliable than name)
+        try:
+            # Find the announcement channel ID (requires channels:read scope)
+            announce_channel_id = None
+            for page in client.conversations_list(types="public_channel", limit=200):
+                for channel in page["channels"]:
+                    if channel["name"] == announce_channel_name:
+                        announce_channel_id = channel["id"]
+                        break
+                if announce_channel_id:
+                    break
+
+            if announce_channel_id and announce_channel_id != original_channel_id:
+                client.chat_postMessage(
+                    channel=announce_channel_id, # Use channel ID
+                    text=public_text
+                    # Note: We DON'T post to the thread in the announcement channel,
+                    # just the main channel announcement.
+                )
+            elif not announce_channel_id:
+                 logger.warning(f"Announcement channel '#{announce_channel_name}' not found.")
+
+        except SlackApiError as e:
+            if e.response["error"] == "missing_scope" and "channels:read" in str(e):
+                logger.warning("Missing 'channels:read' scope to look up announcement channel ID by name. Cannot post announcement.")
+            else:
+                logger.error(f"Error posting to announcement channel #{announce_channel_name}: {e}")
+        except Exception as e:
+             logger.error(f"Unexpected error looking up or posting to announcement channel #{announce_channel_name}: {e}")
+
+    return True # Indicate success
 
 
 # --- Register Command Handlers --- #
@@ -174,11 +176,89 @@ def handle_remaining_slash_command(ack, body, say, client):
 
 # --- Event Handlers --- #
 
-# @app.event("reaction_added")
-# def handle_reaction_added(event, client, say):
-#     # SIMPLIFIED FOR DIAGNOSTICS
-#     logger.info(f"*** DIAGNOSTIC: handle_reaction_added function was called! Event: {event}")
-#     # End of simplified handler
+@app.event("reaction_added")
+def handle_reaction_added(event, client, say):
+    logger.info(f"Reaction added event: {event}")
+    
+    reaction = event.get("reaction", "")
+    if reaction not in config.ALL_EMOJIS:
+        logger.info(f"Ignoring reaction '{reaction}' as it's not in our list of supported emojis")
+        return
+    
+    user_id = event.get("user")
+    
+    item = event.get("item", {})
+    channel_id = item.get("channel")
+    message_ts = item.get("ts")
+    
+    if not (user_id and channel_id and message_ts):
+        logger.error("Missing required information from reaction event")
+        return
+    
+    reaction_key = f"{user_id}-{channel_id}-{message_ts}-{reaction}"
+    if reaction_key in processed_reactions:
+        logger.info(f"Ignoring already processed reaction {reaction_key}")
+        return
+        
+    processed_reactions[reaction_key] = True
+    
+    try:
+        message_response = client.conversations_history(
+            channel=channel_id,
+            latest=message_ts,
+            inclusive=True,
+            limit=1
+        )
+        
+        if not message_response.get("ok") or not message_response.get("messages"):
+            logger.error("Failed to fetch message or no messages returned")
+            return
+        
+        message = message_response["messages"][0]
+        
+        if "bot_id" not in message:
+            logger.info("Ignoring reaction on non-bot message")
+            return
+        
+        text = message.get("text", "")
+        
+        recipient_match = re.search(r"to <@([UW][A-Z0-9]+)>!", text)
+        if not recipient_match:
+            logger.info("Message doesn't appear to be a taco giving announcement")
+            return
+        
+        recipient_id = recipient_match.group(1)
+        
+        if user_id == recipient_id:
+            logger.info(f"User {user_id} tried to react to give themselves tacos")
+            return
+        
+        given_last_24h = database.get_tacos_given_last_24h(user_id)
+        if given_last_24h >= config.DAILY_TACO_LIMIT:
+            try:
+                im_response = client.conversations_open(users=user_id)
+                if im_response and im_response.get("ok"):
+                    client.chat_postMessage(
+                        channel=im_response["channel"]["id"],
+                        text=f"You've already given {given_last_24h} {config.UNIT_NAME_PLURAL} in the last 24 hours (limit: {config.DAILY_TACO_LIMIT}). Try again later!"
+                    )
+            except Exception as e:
+                logger.error(f"Error sending limit DM to user {user_id}: {e}")
+            return
+            
+        note = f"Reaction :{reaction}: to message in <#{channel_id}>"
+        _complete_taco_transaction(
+            client=client,
+            giver_id=user_id,
+            recipient_id=recipient_id,
+            amount=1,  # Reactions always count as +1
+            note=note,
+            original_channel_id=channel_id,
+            original_message_ts=message_ts
+        )
+    except Exception as e:
+        logger.error(f"Error processing reaction: {e}")
+
 
 # @app.event("app_mention")
 # def handle_app_mention(event, client, say):
@@ -208,13 +288,13 @@ def main():
         sys.exit(1)
 
 # --- Diagnostic Handler for Messages --- #
-# @app.event("message")
-# def handle_message_events(body, logger):
-#     # This handler specifically catches messages posted in channels/DMs etc.
-#     # It's different from the @app.message() decorator which handles DMs for the reaction flow.
-#     # Avoid processing message subtypes like edits/deletes or bot messages for this log.
-#     if body.get("event", {}).get("subtype") is None and "bot_id" not in body.get("event", {}):
-#         logger.info(f"DIAGNOSTIC: Received message event: {body}")
+@app.event("message")
+def handle_message_events(body, logger):
+    # This handler specifically catches messages posted in channels/DMs etc.
+    # It's different from the @app.message() decorator which handles DMs for the reaction flow.
+    # Avoid processing message subtypes like edits/deletes or bot messages for this log.
+    if body.get("event", {}).get("subtype") is None and "bot_id" not in body.get("event", {}):
+        logger.info(f"DIAGNOSTIC: Received message event: {body}")
 # --- End Diagnostic Handler --- #
 
 # @app.message() # Temporarily disable this handler
@@ -222,4 +302,4 @@ def main():
 #     # ... (DM processing logic removed)
 
 if __name__ == "__main__":
-    main() 
+    main()          
