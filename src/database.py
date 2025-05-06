@@ -101,40 +101,177 @@ def add_transaction(giver_id, recipient_id, amount, note, source_channel_id, ori
     finally:
         close_db(conn)
 
-def get_leaderboard(limit=config.LEADERBOARD_LIMIT):
-    """Gets the leaderboard based on received tacos."""
-    query = """
+def get_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
+    """Gets the leaderboard based on received tacos, optionally filtered by time range.
+    
+    Args:
+        limit: Maximum number of results to return
+        time_range: One of 'alltime', 'last7days', 'lastweek', 'lastmonth', 
+                   'lastquarter', 'thismonth', 'thisquarter'
+    """
+    base_query = """
     SELECT recipient_id, SUM(amount) as total_received
     FROM transactions
+    """
+    
+    params = []
+    where_clause = ""
+    
+    if time_range and time_range != 'alltime':
+        now = datetime.datetime.now()
+        
+        if time_range == 'last7days':
+            start_date = now - datetime.timedelta(days=7)
+            where_clause = "WHERE timestamp >= ?"
+            params.append(start_date.isoformat())
+            
+        elif time_range == 'lastweek':
+            days_since_sunday = now.weekday() + 1  # +1 because weekday() returns 0 for Monday
+            last_sunday = now - datetime.timedelta(days=days_since_sunday + 7)
+            last_saturday = last_sunday + datetime.timedelta(days=6)
+            where_clause = "WHERE timestamp >= ? AND timestamp <= ?"
+            params.extend([last_sunday.isoformat(), last_saturday.isoformat()])
+            
+        elif time_range == 'lastmonth':
+            last_month = now.month - 1 if now.month > 1 else 12
+            last_month_year = now.year if now.month > 1 else now.year - 1
+            last_month_start = datetime.datetime(last_month_year, last_month, 1)
+            # Calculate the last day of the month
+            if last_month == 12:
+                last_month_end = datetime.datetime(last_month_year, 12, 31, 23, 59, 59)
+            else:
+                last_month_end = datetime.datetime(last_month_year, last_month + 1, 1) - datetime.timedelta(seconds=1)
+            where_clause = "WHERE timestamp >= ? AND timestamp <= ?"
+            params.extend([last_month_start.isoformat(), last_month_end.isoformat()])
+            
+        elif time_range == 'lastquarter':
+            current_quarter = (now.month - 1) // 3 + 1
+            last_quarter = current_quarter - 1 if current_quarter > 1 else 4
+            last_quarter_year = now.year if current_quarter > 1 else now.year - 1
+            last_quarter_start_month = (last_quarter - 1) * 3 + 1
+            last_quarter_start = datetime.datetime(last_quarter_year, last_quarter_start_month, 1)
+            last_quarter_end_month = last_quarter * 3
+            if last_quarter_end_month == 12:
+                last_quarter_end = datetime.datetime(last_quarter_year, 12, 31, 23, 59, 59)
+            else:
+                last_quarter_end = datetime.datetime(last_quarter_year, last_quarter_end_month + 1, 1) - datetime.timedelta(seconds=1)
+            where_clause = "WHERE timestamp >= ? AND timestamp <= ?"
+            params.extend([last_quarter_start.isoformat(), last_quarter_end.isoformat()])
+            
+        elif time_range == 'thismonth':
+            this_month_start = datetime.datetime(now.year, now.month, 1)
+            where_clause = "WHERE timestamp >= ?"
+            params.append(this_month_start.isoformat())
+            
+        elif time_range == 'thisquarter':
+            current_quarter = (now.month - 1) // 3 + 1
+            current_quarter_start_month = (current_quarter - 1) * 3 + 1
+            current_quarter_start = datetime.datetime(now.year, current_quarter_start_month, 1)
+            where_clause = "WHERE timestamp >= ?"
+            params.append(current_quarter_start.isoformat())
+    
+    query = base_query + where_clause + """
     GROUP BY recipient_id
     ORDER BY total_received DESC
     LIMIT ?
     """
+    params.append(limit)
+    
+    logger.info(f"Executing leaderboard query with time_range={time_range}, params={params}")
+    
     conn = None
     leaders = []
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(query, (limit,))
+        cursor.execute(query, tuple(params))
         leaders = cursor.fetchall()
+        logger.info(f"Leaderboard query returned {len(leaders)} results")
     except sqlite3.Error as e:
         logger.error(f"Error fetching leaderboard: {e}")
     finally:
         close_db(conn)
     return leaders
 
-def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT):
-    """Gets a leaderboard of events that earned the most wows."""
-    query = """
+def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
+    """Gets a leaderboard of events that earned the most wows, optionally filtered by time range.
+    
+    Args:
+        limit: Maximum number of results to return
+        time_range: One of 'alltime', 'last7days', 'lastweek', 'lastmonth', 
+                   'lastquarter', 'thismonth', 'thisquarter'
+    """
+    base_query = """
     SELECT original_channel_id, original_message_ts, COUNT(*) as reaction_count, 
            GROUP_CONCAT(giver_id) as givers
     FROM transactions
     WHERE original_message_ts IS NOT NULL AND original_channel_id IS NOT NULL
+    """
+    
+    params = []
+    where_clause = ""
+    
+    if time_range and time_range != 'alltime':
+        now = datetime.datetime.now()
+        
+        if time_range == 'last7days':
+            start_date = now - datetime.timedelta(days=7)
+            where_clause = " AND timestamp >= ?"
+            params.append(start_date.isoformat())
+            
+        elif time_range == 'lastweek':
+            days_since_sunday = now.weekday() + 1  # +1 because weekday() returns 0 for Monday
+            last_sunday = now - datetime.timedelta(days=days_since_sunday + 7)
+            last_saturday = last_sunday + datetime.timedelta(days=6)
+            where_clause = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend([last_sunday.isoformat(), last_saturday.isoformat()])
+            
+        elif time_range == 'lastmonth':
+            last_month = now.month - 1 if now.month > 1 else 12
+            last_month_year = now.year if now.month > 1 else now.year - 1
+            last_month_start = datetime.datetime(last_month_year, last_month, 1)
+            # Calculate the last day of the month
+            if last_month == 12:
+                last_month_end = datetime.datetime(last_month_year, 12, 31, 23, 59, 59)
+            else:
+                last_month_end = datetime.datetime(last_month_year, last_month + 1, 1) - datetime.timedelta(seconds=1)
+            where_clause = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend([last_month_start.isoformat(), last_month_end.isoformat()])
+            
+        elif time_range == 'lastquarter':
+            current_quarter = (now.month - 1) // 3 + 1
+            last_quarter = current_quarter - 1 if current_quarter > 1 else 4
+            last_quarter_year = now.year if current_quarter > 1 else now.year - 1
+            last_quarter_start_month = (last_quarter - 1) * 3 + 1
+            last_quarter_start = datetime.datetime(last_quarter_year, last_quarter_start_month, 1)
+            last_quarter_end_month = last_quarter * 3
+            if last_quarter_end_month == 12:
+                last_quarter_end = datetime.datetime(last_quarter_year, 12, 31, 23, 59, 59)
+            else:
+                last_quarter_end = datetime.datetime(last_quarter_year, last_quarter_end_month + 1, 1) - datetime.timedelta(seconds=1)
+            where_clause = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend([last_quarter_start.isoformat(), last_quarter_end.isoformat()])
+            
+        elif time_range == 'thismonth':
+            this_month_start = datetime.datetime(now.year, now.month, 1)
+            where_clause = " AND timestamp >= ?"
+            params.append(this_month_start.isoformat())
+            
+        elif time_range == 'thisquarter':
+            current_quarter = (now.month - 1) // 3 + 1
+            current_quarter_start_month = (current_quarter - 1) * 3 + 1
+            current_quarter_start = datetime.datetime(now.year, current_quarter_start_month, 1)
+            where_clause = " AND timestamp >= ?"
+            params.append(current_quarter_start.isoformat())
+    
+    query = base_query + where_clause + """
     GROUP BY original_channel_id, original_message_ts
     ORDER BY reaction_count DESC
     LIMIT ?
     """
-    logger.info(f"Executing event leaderboard query with limit {limit}")
+    params.append(limit)
+    
+    logger.info(f"Executing event leaderboard query with time_range={time_range}, params={params}")
     
     debug_query = """
     SELECT COUNT(*) FROM transactions 
@@ -151,7 +288,7 @@ def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT):
         count = cursor.fetchone()[0]
         logger.info(f"Found {count} transactions with original message data")
         
-        cursor.execute(query, (limit,))
+        cursor.execute(query, tuple(params))
         events = cursor.fetchall()
         logger.info(f"Event leaderboard query returned {len(events)} events")
         
@@ -197,4 +334,4 @@ def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=
         logger.error(f"Error fetching history: {e}")
     finally:
         close_db(conn)
-    return history                    
+    return history                            
