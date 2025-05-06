@@ -198,9 +198,7 @@ def handle_reaction_added(event, client, say):
     logger.info(f"Reaction added event: {event}")
     
     reaction = event.get("reaction", "")
-    if reaction == config.UNIT_REACTION_EMOJI:
-        pass
-    elif reaction not in config.ALL_EMOJIS:
+    if reaction not in config.ALL_EMOJIS:
         logger.info(f"Ignoring reaction '{reaction}' as it's not in our list of supported emojis")
         return
     
@@ -329,4 +327,4 @@ def handle_message_events(body, logger):
 #     # ... (DM processing logic removed)
 
 if __name__ == "__main__":
-    main()                                                                                
+    main()                                                                                                                                                                
