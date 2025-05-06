@@ -148,7 +148,7 @@ def generate_manifest():
                     "request_url": "https://slack.com/socket-mode",
                     "bot_events": [
                         "reaction_added",
-                        "message"
+                        "message.channels"
                     ]
                 }
             }
