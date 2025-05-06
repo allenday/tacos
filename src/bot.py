@@ -7,7 +7,7 @@ from slack_bolt.adapter.socket_mode import SocketModeHandler
 from slack_sdk.errors import SlackApiError # Added
 
 # Project imports
-from . import config, database, commands
+from . import config, database, commands, command_utils
 
 # --- Logging Setup --- #
 # Set root logger level first
@@ -137,42 +137,59 @@ def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, ori
 
 # --- Register Command Handlers --- #
 
-@app.command("/tacos_give")
-def handle_tacos_command(ack, body, say, client):
+def handle_give_command(ack, body, say, client):
     text = body.get("text", "").strip()
-    logger.info(f"Received /tacos command: {text}")
-
-    # Assume /tacos is always for giving
+    logger.info(f"Received {command_utils.get_command_name(command_utils.CMD_GIVE)} command: {text}")
+    # Assume give command is always for giving
     commands.handle_give_command(ack, body, say, client)
 
-@app.command("/tacos_stats")
 def handle_stats_slash_command(ack, body, say, client):
-    logger.info("Received /tacos_stats command")
+    logger.info(f"Received {command_utils.get_command_name(command_utils.CMD_STATS)} command")
     # Body text is ignored for stats/leaderboard
     commands.handle_stats_command(ack, body, client)
 
-@app.command("/tacos_history")
 def handle_history_slash_command(ack, body, say, client):
-    logger.info(f"Received /tacos_history command: {body.get('text')}")
+    logger.info(f"Received {command_utils.get_command_name(command_utils.CMD_HISTORY)} command: {body.get('text')}")
     # Pass the text directly to the handler (it expects args like [@user] [lines])
     commands.handle_history_command(ack, body, say, client)
 
-@app.command("/tacos_received")
 def handle_received_slash_command(ack, body, say, client):
-    logger.info(f"Received /tacos_received command: {body.get('text')}")
+    logger.info(f"Received {command_utils.get_command_name(command_utils.CMD_RECEIVED)} command: {body.get('text')}")
     # Pass the text directly to the handler (it expects args like [lines])
     commands.handle_received_command(ack, body, say, client)
 
-@app.command("/tacos_help")
 def handle_help_slash_command(ack, body, say, client):
-    logger.info("Received /tacos_help command")
+    logger.info(f"Received {command_utils.get_command_name(command_utils.CMD_HELP)} command")
     # Body text is ignored for help
     commands.handle_help_command(ack, body, client)
 
-@app.command("/tacos_remaining")
 def handle_remaining_slash_command(ack, body, say, client):
-    logger.info(f"Received /tacos_remaining command: {body.get('text')}")
+    logger.info(f"Received {command_utils.get_command_name(command_utils.CMD_REMAINING)} command: {body.get('text')}")
     commands.handle_remaining_command(ack, body, client)
+
+def register_command_handlers():
+    """Register all command handlers with dynamic prefixes."""
+    
+    app.command(command_utils.get_command_name(command_utils.CMD_GIVE))(handle_give_command)
+    app.command(command_utils.get_command_name(command_utils.CMD_STATS))(handle_stats_slash_command)
+    app.command(command_utils.get_command_name(command_utils.CMD_HISTORY))(handle_history_slash_command)
+    app.command(command_utils.get_command_name(command_utils.CMD_RECEIVED))(handle_received_slash_command)
+    app.command(command_utils.get_command_name(command_utils.CMD_HELP))(handle_help_slash_command)
+    app.command(command_utils.get_command_name(command_utils.CMD_REMAINING))(handle_remaining_slash_command)
+    
+    if config.UNIT_NAME.lower() not in ["taco", "tacos"]:
+        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_GIVE}")(handle_give_command)
+        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_STATS}")(handle_stats_slash_command)
+        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_HISTORY}")(handle_history_slash_command)
+        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_RECEIVED}")(handle_received_slash_command)
+        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_HELP}")(handle_help_slash_command)
+        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_REMAINING}")(handle_remaining_slash_command)
+    
+    logger.info(f"Registered command handlers with prefix: {command_utils.get_command_prefix()}")
+    if config.UNIT_NAME.lower() not in ["taco", "tacos"]:
+        logger.info(f"Also registered legacy command handlers with prefix: {command_utils.LEGACY_PREFIX}")
+
+register_command_handlers()
 
 # --- Event Handlers --- #
 
@@ -277,10 +294,18 @@ def global_error_handler(error, body, logger):
 
 # --- Start the App --- #
 def main():
-    logger.info("Starting Taco Bot using Socket Mode...")
+    logger.info(f"Starting {config.UNIT_NAME.capitalize()} Bot using Socket Mode...")
     # Explicitly print tokens right before use
     logger.debug(f"--- MAIN: Using SLACK_BOT_TOKEN='{config.SLACK_BOT_TOKEN}'")
     logger.debug(f"--- MAIN: Using SLACK_APP_TOKEN='{config.SLACK_APP_TOKEN}'")
+    
+    try:
+        from scripts.generate_manifest import generate_manifest
+        generate_manifest()
+        logger.info(f"Generated manifest.yml with {config.UNIT_NAME} as the command prefix")
+    except Exception as e:
+        logger.error(f"Failed to generate manifest.yml: {e}")
+    
     handler = SocketModeHandler(app, config.SLACK_APP_TOKEN)
     # Add error handling for SocketModeHandler connection issues
     try:
@@ -304,4 +329,4 @@ def handle_message_events(body, logger):
 #     # ... (DM processing logic removed)
 
 if __name__ == "__main__":
-    main()                                                            
+    main()                                                                                

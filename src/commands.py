@@ -2,7 +2,7 @@ import logging
 import re
 import datetime # Added for timestamp formatting
 from slack_sdk.errors import SlackApiError
-from . import config, database
+from . import config, database, command_utils
 from slack_sdk.web import WebClient
 
 logger = logging.getLogger(__name__)
@@ -110,35 +110,36 @@ def handle_help_command(ack, body, client):
     unit_name_plural = config.UNIT_NAME_PLURAL
     unit_name_cap = unit_name.capitalize()
     unit_name_plural_cap = unit_name_plural.capitalize()
+    cmd_prefix = command_utils.get_command_prefix()
     
     help_text = f"""
 :{emoji}: *{unit_name_cap} Bot Help* :{emoji}:
 
 Here are the available commands:
 
-* `/tacos_give <amount> <@user> <note>`
+* `/{cmd_prefix}give <amount> <@user> <note>`
   Give a specific number of {unit_name_plural} to someone with a reason. Uses the standard `@mention` (e.g. `<@U123>`) or attempts to look up `@displayname`.
-  Example: `/tacos_give 3 @allenday great presentation!`
+  Example: `/{cmd_prefix}give 3 @allenday great presentation!`
 
-* `/tacos_stats`
+* `/{cmd_prefix}stats`
   Show {unit_name} statistics (currently shows the leaderboard).
 
-* `/tacos_history [@user] [lines]`
+* `/{cmd_prefix}history [@user] [lines]`
   Show recent {unit_name} *giving* history. Shows your giving history by default.
   If you specify `@user`, it shows the history of {unit_name_plural} *received* by that user.
   `[lines]` is optional (default: {config.DEFAULT_HISTORY_LINES}, max: 50).
-  Example: `/tacos_history @allenday 5`
-  Example: `/tacos_history 20`
+  Example: `/{cmd_prefix}history @allenday 5`
+  Example: `/{cmd_prefix}history 20`
 
-* `/tacos_received [lines]`
+* `/{cmd_prefix}received [lines]`
   Show your recent {unit_name} *receiving* history.
   `[lines]` is optional (default: {config.DEFAULT_HISTORY_LINES}, max: 50).
-  Example: `/tacos_received 15`
+  Example: `/{cmd_prefix}received 15`
 
-* `/tacos_remaining [@user]`
+* `/{cmd_prefix}remaining [@user]`
   Check how many {unit_name_plural} you (or `@user`, if specified) have left to give in the next 24 hours. Responds privately.
 
-* `/tacos_help`
+* `/{cmd_prefix}help`
   Show this help message (visible only to you).
 
 *Rules:*
@@ -688,4 +689,4 @@ def get_emoji():
     else:
         return random.choice(config.ALTERNATE_EMOJIS)
 
-# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                        
+# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
