@@ -143,7 +143,14 @@ def generate_manifest():
                 },
                 "org_deploy_enabled": False,
                 "socket_mode_enabled": True,
-                "token_rotation_enabled": False
+                "token_rotation_enabled": False,
+                "event_subscriptions": {
+                    "request_url": "https://slack.com/socket-mode",
+                    "bot_events": [
+                        "reaction_added",
+                        "message"
+                    ]
+                }
             }
         }
 
