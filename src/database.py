@@ -134,13 +134,30 @@ def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT):
     ORDER BY reaction_count DESC
     LIMIT ?
     """
+    logger.info(f"Executing event leaderboard query with limit {limit}")
+    
+    debug_query = """
+    SELECT COUNT(*) FROM transactions 
+    WHERE original_message_ts IS NOT NULL AND original_channel_id IS NOT NULL
+    """
+    
     conn = None
     events = []
     try:
         conn = get_db()
         cursor = conn.cursor()
+        
+        cursor.execute(debug_query)
+        count = cursor.fetchone()[0]
+        logger.info(f"Found {count} transactions with original message data")
+        
         cursor.execute(query, (limit,))
         events = cursor.fetchall()
+        logger.info(f"Event leaderboard query returned {len(events)} events")
+        
+        if events:
+            for event in events:
+                logger.info(f"Event data: {dict(event)}")
     except sqlite3.Error as e:
         logger.error(f"Error fetching event leaderboard: {e}")
     finally:
@@ -180,4 +197,4 @@ def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=
         logger.error(f"Error fetching history: {e}")
     finally:
         close_db(conn)
-    return history                
+    return history                    
