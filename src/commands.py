@@ -229,6 +229,18 @@ def handle_stats_command(ack, body, client):
     message = f":{emoji}: *{config.UNIT_NAME.capitalize()} Leaderboard* :{emoji}:\n\n"
     for i, leader in enumerate(leaders):
         message += f"{i+1}. <@{leader['recipient_id']}>: {leader['total_received']} {config.UNIT_NAME_PLURAL}\n"
+    
+    events = database.get_event_leaderboard()
+    if events:
+        message += f"\n\n:{emoji}: *Events with Most Reactions* :{emoji}:\n\n"
+        for i, event in enumerate(events):
+            channel_id = event['original_channel_id']
+            message_ts = event['original_message_ts']
+            reaction_count = event['reaction_count']
+            
+            # Create a proper link to the original message
+            message_link = f"https://slack.com/archives/{channel_id}/p{message_ts.replace('.', '')}"
+            message += f"{i+1}. <{message_link}|Message in <#{channel_id}>>: {reaction_count} reactions\n"
 
     # Determine if we are in the announcement channel
     post_publicly = False
@@ -689,4 +701,4 @@ def get_emoji():
     else:
         return random.choice(config.ALTERNATE_EMOJIS)
 
-# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        
+# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
