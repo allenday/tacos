@@ -100,7 +100,7 @@ def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, ori
         logger.error(f"Error posting public message to original channel {original_channel_id} (ts: {original_message_ts}): {e}")
 
     # 4. Announce in central tacos channel (if different and configured)
-    announce_channel_name = config.TACO_ANNOUNCE_CHANNEL
+    announce_channel_name = config.UNIT_ANNOUNCE_CHANNEL
     if announce_channel_name:
         # Get channel ID for comparison (more reliable than name)
         try:
@@ -181,7 +181,9 @@ def handle_reaction_added(event, client, say):
     logger.info(f"Reaction added event: {event}")
     
     reaction = event.get("reaction", "")
-    if reaction not in config.ALL_EMOJIS:
+    if reaction == config.UNIT_REACTION_EMOJI:
+        pass
+    elif reaction not in config.ALL_EMOJIS:
         logger.info(f"Ignoring reaction '{reaction}' as it's not in our list of supported emojis")
         return
     
@@ -234,13 +236,13 @@ def handle_reaction_added(event, client, say):
             return
         
         given_last_24h = database.get_tacos_given_last_24h(user_id)
-        if given_last_24h >= config.DAILY_TACO_LIMIT:
+        if given_last_24h >= config.DAILY_UNIT_LIMIT:
             try:
                 im_response = client.conversations_open(users=user_id)
                 if im_response and im_response.get("ok"):
                     client.chat_postMessage(
                         channel=im_response["channel"]["id"],
-                        text=f"You've already given {given_last_24h} {config.UNIT_NAME_PLURAL} in the last 24 hours (limit: {config.DAILY_TACO_LIMIT}). Try again later!"
+                        text=f"You've already given {given_last_24h} {config.UNIT_NAME_PLURAL} in the last 24 hours (limit: {config.DAILY_UNIT_LIMIT}). Try again later!"
                     )
             except Exception as e:
                 logger.error(f"Error sending limit DM to user {user_id}: {e}")
@@ -302,4 +304,4 @@ def handle_message_events(body, logger):
 #     # ... (DM processing logic removed)
 
 if __name__ == "__main__":
-    main()          
+    main()                                                            
