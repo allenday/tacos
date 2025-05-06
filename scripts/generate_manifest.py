@@ -4,16 +4,30 @@ import yaml
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent))
-from src import config
+
+try:
+    from src import config
+except ValueError as e:
+    class DummyConfig:
+        def __init__(self):
+            self.UNIT_NAME = os.environ.get("UNIT_NAME", "kudos").lower()
+            self.UNIT_NAME_PLURAL = os.environ.get("UNIT_NAME_PLURAL", self.UNIT_NAME + "s").lower()
+            self.PRIMARY_EMOJI = os.environ.get("PRIMARY_EMOJI", "star-struck").lower()
+            self.SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN", "xoxb-dummy-token")
+            self.SLACK_APP_TOKEN = os.environ.get("SLACK_APP_TOKEN", "xapp-dummy-token")
+    
+    config = DummyConfig()
+    print("Warning: Using dummy config for manifest generation. This is fine for creating the manifest.")
+    print("Note: You will need real tokens when running the actual bot.")
 
 def check_env_configuration():
-    """Verify that the .env configuration is valid."""
+    """Verify that the .env configuration is valid for manifest generation."""
     issues = []
     
-    if not config.SLACK_BOT_TOKEN:
-        issues.append("Missing required environment variable: SLACK_BOT_TOKEN")
-    if not config.SLACK_APP_TOKEN:
-        issues.append("Missing required environment variable: SLACK_APP_TOKEN")
+    # if not config.SLACK_BOT_TOKEN:
+    #     issues.append("Missing required environment variable: SLACK_BOT_TOKEN")
+    # if not config.SLACK_APP_TOKEN:
+    #     issues.append("Missing required environment variable: SLACK_APP_TOKEN")
     
     if not config.UNIT_NAME or not config.UNIT_NAME.isalpha():
         issues.append(f"UNIT_NAME must contain only alphabetic characters: '{config.UNIT_NAME}'")
