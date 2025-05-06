@@ -24,7 +24,7 @@ def close_db(conn):
 
 def init_db():
     """Initializes the database schema if it doesn't exist."""
-    schema = """
+    schema_v1 = """
     CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         giver_id TEXT NOT NULL,
@@ -32,24 +32,56 @@ def init_db():
         amount INTEGER NOT NULL,
         note TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        source_channel_id TEXT,
-        original_message_ts TEXT,
-        original_channel_id TEXT
+        source_channel_id TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_giver_timestamp ON transactions (giver_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_recipient_timestamp ON transactions (recipient_id, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_original_message ON transactions (original_channel_id, original_message_ts);
     """
+    
+    # Schema additions for message context
+    add_original_message_ts_col = "ALTER TABLE transactions ADD COLUMN original_message_ts TEXT;"
+    add_original_channel_id_col = "ALTER TABLE transactions ADD COLUMN original_channel_id TEXT;"
+    create_original_message_idx = "CREATE INDEX IF NOT EXISTS idx_original_message ON transactions (original_channel_id, original_message_ts);"
+
     conn = None
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.executescript(schema)
+        
+        # Initial table creation (or ensure base table exists)
+        cursor.executescript(schema_v1) 
+        logger.info("Base 'transactions' table schema ensured.")
+
+        # Attempt to add new columns - this will fail gracefully if columns already exist
+        try:
+            cursor.execute(add_original_message_ts_col)
+            logger.info("Added 'original_message_ts' column to 'transactions' table.")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" in str(e).lower():
+                logger.info("'original_message_ts' column already exists.")
+            else:
+                raise # Re-raise if it's a different operational error
+
+        try:
+            cursor.execute(add_original_channel_id_col)
+            logger.info("Added 'original_channel_id' column to 'transactions' table.")
+        except sqlite3.OperationalError as e:
+            if "duplicate column name" in str(e).lower():
+                logger.info("'original_channel_id' column already exists.")
+            else:
+                raise # Re-raise if it's a different operational error
+        
+        # Create index for the new columns
+        cursor.execute(create_original_message_idx)
+        logger.info("Ensured 'idx_original_message' index exists.")
+        
         conn.commit()
-        logger.info("Database initialized successfully.")
+        logger.info("Database schema migration/initialization completed successfully.")
     except sqlite3.Error as e:
-        logger.error(f"Database initialization error: {e}")
+        logger.error(f"Database schema migration/initialization error: {e}")
+        if conn:
+            conn.rollback()
     finally:
         close_db(conn)
 
@@ -301,6 +333,107 @@ def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
     finally:
         close_db(conn)
     return events
+
+def get_reason_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
+    """Gets a leaderboard of recipient/reason pairs that earned the most wows, 
+    optionally filtered by time range.
+    
+    Args:
+        limit: Maximum number of results to return
+        time_range: One of 'alltime', 'last7days', 'lastweek', 'lastmonth', 
+                   'lastquarter', 'thismonth', 'thisquarter'
+    """
+    base_query = """
+    SELECT 
+        recipient_id,
+        LOWER(TRIM(note)) as reason, 
+        SUM(amount) as total_wows, 
+        COUNT(DISTINCT giver_id) as unique_givers
+    FROM transactions
+    WHERE note IS NOT NULL AND TRIM(note) != ''
+    """
+    
+    params = []
+    where_clause_suffix = "" # To be appended after the main WHERE note IS NOT NULL
+    
+    if time_range and time_range != 'alltime':
+        now = datetime.datetime.now()
+        
+        if time_range == 'last7days':
+            start_date = now - datetime.timedelta(days=7)
+            where_clause_suffix = " AND timestamp >= ?"
+            params.append(start_date.isoformat())
+            
+        elif time_range == 'lastweek':
+            days_since_sunday = now.weekday() + 1 
+            last_sunday = now - datetime.timedelta(days=days_since_sunday + 7)
+            last_saturday = last_sunday + datetime.timedelta(days=6, hours=23, minutes=59, seconds=59) # Ensure full day coverage
+            where_clause_suffix = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend([last_sunday.isoformat(), last_saturday.isoformat()])
+            
+        elif time_range == 'lastmonth':
+            last_month_day = now.replace(day=1) - datetime.timedelta(days=1)
+            first_day_last_month = last_month_day.replace(day=1)
+            last_day_last_month = last_month_day.replace(hour=23, minute=59, second=59)
+            where_clause_suffix = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend([first_day_last_month.isoformat(), last_day_last_month.isoformat()])
+            
+        elif time_range == 'lastquarter':
+            current_quarter = (now.month - 1) // 3
+            last_quarter_year = now.year
+            if current_quarter == 0: # Current month is Jan-Mar, so last quarter was in previous year
+                last_quarter_year -= 1
+                last_quarter_end_month = 12
+                last_quarter_start_month = 10
+            else: # Last quarter was in the current year
+                last_quarter_end_month = current_quarter * 3
+                last_quarter_start_month = last_quarter_end_month - 2
+            
+            first_day_last_quarter = datetime.datetime(last_quarter_year, last_quarter_start_month, 1)
+            if last_quarter_end_month == 12:
+                last_day_last_quarter = datetime.datetime(last_quarter_year, 12, 31, 23, 59, 59)
+            else:
+                last_day_last_quarter = datetime.datetime(last_quarter_year, last_quarter_end_month + 1, 1) - datetime.timedelta(seconds=1)
+            where_clause_suffix = " AND timestamp >= ? AND timestamp <= ?"
+            params.extend([first_day_last_quarter.isoformat(), last_day_last_quarter.isoformat()])
+            
+        elif time_range == 'thismonth':
+            this_month_start = datetime.datetime(now.year, now.month, 1)
+            where_clause_suffix = " AND timestamp >= ?"
+            params.append(this_month_start.isoformat())
+            
+        elif time_range == 'thisquarter':
+            current_quarter_start_month = ((now.month - 1) // 3) * 3 + 1
+            this_quarter_start = datetime.datetime(now.year, current_quarter_start_month, 1)
+            where_clause_suffix = " AND timestamp >= ?"
+            params.append(this_quarter_start.isoformat())
+    
+    query = base_query + where_clause_suffix + """
+    GROUP BY recipient_id, reason
+    HAVING total_wows > 0 
+    ORDER BY total_wows DESC, unique_givers DESC, recipient_id ASC, reason ASC
+    LIMIT ?
+    """
+    params.append(limit)
+    
+    logger.info(f"Executing recipient/reason leaderboard query with time_range={time_range}, params={params}")
+    
+    conn = None
+    reasons = []
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(query, tuple(params))
+        reasons = cursor.fetchall()
+        logger.info(f"Recipient/reason leaderboard query returned {len(reasons)} entries")
+        if reasons:
+            for r in reasons:
+                logger.debug(f"Recipient/reason data: {dict(r)}")
+    except sqlite3.Error as e:
+        logger.error(f"Error fetching recipient/reason leaderboard: {e}")
+    finally:
+        close_db(conn)
+    return reasons
 
 def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=None):
     """Gets recent transaction history, filtering by giver or recipient."""

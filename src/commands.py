@@ -280,17 +280,21 @@ def handle_stats_command(ack, body, client):
             
             notes_str = event.get('notes', '')
             givers_str = event.get('givers', '')
-            recipients_str = event.get('recipients', '')
+            # recipients_str = event.get('recipients', '') # Not directly used for display here
             
             notes = notes_str.split(',') if notes_str else []
             givers = givers_str.split(',') if givers_str else []
-            recipients = recipients_str.split(',') if recipients_str else []
+            # recipients = recipients_str.split(',') if recipients_str else []
             
             primary_note = "No reason provided"
-            for note in notes:
-                if note and not note.startswith('Reaction'):
-                    primary_note = note
-                    break
+            # Attempt to find a non-reaction note if multiple exist due to GROUP_CONCAT
+            if notes:
+                # Prefer notes that are not the default reaction placeholder
+                non_reaction_notes = [n for n in notes if n and not n.lower().startswith("reaction for:")]
+                if non_reaction_notes:
+                    primary_note = non_reaction_notes[0] # Take the first one found
+                elif notes[0]: # Fallback to the first note if all are reaction-like or only one exists
+                    primary_note = notes[0]
             
             # Create a proper link to the original message
             message_link = f"https://slack.com/archives/{event_channel_id}/p{message_ts.replace('.', '')}"
@@ -299,23 +303,37 @@ def handle_stats_command(ack, body, client):
             unique_giver_count = len(unique_givers)
             
             # Format the message with detailed information
-            message += f"{i+1}. <{message_link}|{primary_note}>: {reaction_count} reactions from {unique_giver_count} people\n"
+            message += f"{i+1}. <{message_link}|{primary_note if primary_note else 'Original Message'}>: {reaction_count} reactions from {unique_giver_count} people\n"
             
-            if unique_giver_count > 0:
-                message += f"   *Given by:* "
-                giver_counts = {}
-                for giver in givers:
-                    if giver:  # Skip empty strings
-                        giver_counts[giver] = giver_counts.get(giver, 0) + 1
-                
-                giver_list = []
-                for giver, count in giver_counts.items():
-                    giver_list.append(f"<@{giver}> ({count})")
-                
-                message += ", ".join(giver_list) + "\n"
+            # if unique_giver_count > 0:
+            #     message += f"   *Reacted by:* "
+            #     giver_counts = {}
+            #     for giver in givers:
+            #         if giver:  # Skip empty strings
+            #             giver_counts[giver] = giver_counts.get(giver, 0) + 1
+            #     
+            #     giver_list = []
+            #     for giver, count in giver_counts.items():
+            #         giver_list.append(f"<@{giver}> ({count})") # Removed count for brevity
+            #     
+            #     message += ", ".join(giver_list) + "\n"
     else:
-        logger.info("No events found for the leaderboard")
+        logger.info("No events found for the event leaderboard")
 
+    # --- Add Top Wow Reasons Leaderboard ---
+    reason_leaders = database.get_reason_leaderboard(time_range=time_range)
+    if reason_leaders:
+        message += f"\n\n:{emoji}: *Top Wow Reasons ({time_range_display})* :{emoji}:\n\n"
+        for i, reason_entry in enumerate(reason_leaders):
+            recipient_id = reason_entry['recipient_id']
+            reason_text = reason_entry['reason']
+            total_wows = reason_entry['total_wows']
+            unique_givers = reason_entry['unique_givers']
+            plural_givers = "person" if unique_givers == 1 else "people"
+            plural_wows = config.UNIT_NAME if total_wows == 1 else config.UNIT_NAME_PLURAL
+            message += f"{i+1}. For <@{recipient_id}>, reason \"{reason_text}\": {total_wows} {plural_wows} from {unique_givers} unique {plural_givers}\n"
+    else:
+        logger.info("No reasons found for the reason leaderboard")
 
     # Determine if we are in the announcement channel
     post_publicly = False
