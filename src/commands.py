@@ -121,8 +121,10 @@ Here are the available commands:
   Give a specific number of {unit_name_plural} to someone with a reason. Uses the standard `@mention` (e.g. `<@U123>`) or attempts to look up `@displayname`.
   Example: `/{cmd_prefix}give 3 @allenday great presentation!`
 
-* `/{cmd_prefix}stats`
-  Show {unit_name} statistics (currently shows the leaderboard).
+* `/{cmd_prefix}stats [time_range]`
+  Show {unit_name} statistics (leaderboard and events with most reactions).
+  Optional time_range: alltime, last7days, lastweek, lastmonth, lastquarter, thismonth, thisquarter
+  Example: `/{cmd_prefix}stats lastmonth`
 
 * `/{cmd_prefix}history [@user] [lines]`
   Show recent {unit_name} *giving* history. Shows your giving history by default.
@@ -211,8 +213,43 @@ def handle_stats_command(ack, body, client):
     user_id = body["user_id"]
     channel_id = body["channel_id"]
     # client = say.client # Now passed directly
+    
+    text = body.get("text", "").strip().lower()
+    time_range = None
+    valid_time_ranges = ['alltime', 'last7days', 'lastweek', 'lastmonth', 'lastquarter', 'thismonth', 'thisquarter']
+    
+    if text:
+        if text in valid_time_ranges:
+            time_range = text
+            logger.info(f"Using time range: {time_range}")
+        else:
+            # Invalid time range parameter
+            try:
+                client.chat_postEphemeral(
+                    channel=channel_id,
+                    user=user_id,
+                    text=f"Invalid time range parameter: '{text}'. Valid options are: {', '.join(valid_time_ranges)}"
+                )
+            except Exception as e:
+                logger.error(f"Error sending invalid time range message: {e}")
+            return
+    
+    # Get time range display name for the message
+    time_range_display = "All Time"
+    if time_range == 'last7days':
+        time_range_display = "Last 7 Days"
+    elif time_range == 'lastweek':
+        time_range_display = "Last Week"
+    elif time_range == 'lastmonth':
+        time_range_display = "Last Month"
+    elif time_range == 'lastquarter':
+        time_range_display = "Last Quarter"
+    elif time_range == 'thismonth':
+        time_range_display = "This Month"
+    elif time_range == 'thisquarter':
+        time_range_display = "This Quarter"
 
-    leaders = database.get_leaderboard()
+    leaders = database.get_leaderboard(time_range=time_range)
 
     if not leaders:
         # Send ephemeral error message
@@ -220,27 +257,65 @@ def handle_stats_command(ack, body, client):
             client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text=f"The leaderboard is empty! Start giving some :{get_emoji()}:!")
+                text=f"The leaderboard is empty for {time_range_display.lower()}! Start giving some :{get_emoji()}:!")
         except Exception as e:
             logger.error(f"Error sending ephemeral leaderboard empty message: {e}")
         return
 
     emoji = get_emoji()
-    message = f":{emoji}: *{config.UNIT_NAME.capitalize()} Leaderboard* :{emoji}:\n\n"
+    message = f":{emoji}: *{config.UNIT_NAME.capitalize()} Leaderboard ({time_range_display})* :{emoji}:\n\n"
     for i, leader in enumerate(leaders):
         message += f"{i+1}. <@{leader['recipient_id']}>: {leader['total_received']} {config.UNIT_NAME_PLURAL}\n"
     
-    events = database.get_event_leaderboard()
+    events = database.get_event_leaderboard(time_range=time_range)
+    logger.info(f"Event leaderboard data: {events}")
+    
     if events:
-        message += f"\n\n:{emoji}: *Events with Most Reactions* :{emoji}:\n\n"
+        message += f"\n\n:{emoji}: *Events with Most Reactions ({time_range_display})* :{emoji}:\n\n"
         for i, event in enumerate(events):
-            channel_id = event['original_channel_id']
+            logger.info(f"Processing event: {event}")
+            event_channel_id = event['original_channel_id']
             message_ts = event['original_message_ts']
             reaction_count = event['reaction_count']
             
+            notes_str = event.get('notes', '')
+            givers_str = event.get('givers', '')
+            recipients_str = event.get('recipients', '')
+            
+            notes = notes_str.split(',') if notes_str else []
+            givers = givers_str.split(',') if givers_str else []
+            recipients = recipients_str.split(',') if recipients_str else []
+            
+            primary_note = "No reason provided"
+            for note in notes:
+                if note and not note.startswith('Reaction'):
+                    primary_note = note
+                    break
+            
             # Create a proper link to the original message
-            message_link = f"https://slack.com/archives/{channel_id}/p{message_ts.replace('.', '')}"
-            message += f"{i+1}. <{message_link}|Message in <#{channel_id}>>: {reaction_count} reactions\n"
+            message_link = f"https://slack.com/archives/{event_channel_id}/p{message_ts.replace('.', '')}"
+            
+            unique_givers = set([g for g in givers if g])
+            unique_giver_count = len(unique_givers)
+            
+            # Format the message with detailed information
+            message += f"{i+1}. <{message_link}|{primary_note}>: {reaction_count} reactions from {unique_giver_count} people\n"
+            
+            if unique_giver_count > 0:
+                message += f"   *Given by:* "
+                giver_counts = {}
+                for giver in givers:
+                    if giver:  # Skip empty strings
+                        giver_counts[giver] = giver_counts.get(giver, 0) + 1
+                
+                giver_list = []
+                for giver, count in giver_counts.items():
+                    giver_list.append(f"<@{giver}> ({count})")
+                
+                message += ", ".join(giver_list) + "\n"
+    else:
+        logger.info("No events found for the leaderboard")
+
 
     # Determine if we are in the announcement channel
     post_publicly = False
@@ -586,7 +661,9 @@ def handle_give_command(ack, body, say, client):
             recipient_id=recipient_id,
             amount=amount,
             note=note,
-            source_channel_id=channel_id # Pass channel ID
+            source_channel_id=channel_id, # Pass channel ID
+            original_message_ts=None,
+            original_channel_id=None
         )
     except Exception as e:
         logger.error(f"Error adding transaction to database: {e}")
@@ -701,4 +778,4 @@ def get_emoji():
     else:
         return random.choice(config.ALTERNATE_EMOJIS)
 
-# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
+# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
