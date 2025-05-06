@@ -27,7 +27,7 @@ Users will interact with the bot using the following slash commands:
     *   **Action:** Displays taco statistics. Currently shows the leaderboard of users ranked by the total number of tacos they have *received*.
     *   **Arguments:** None.
     *   **Output:** A formatted message listing the top N users (e.g., top 10) and their received taco counts.
-    *   **Output:** An ephemeral message listing the top N users (e.g., top 10) and their received taco counts. If the command is run in the configured `TACO_ANNOUNCE_CHANNEL`, the message is posted publicly to that channel instead.
+    *   **Output:** An ephemeral message listing the top N users (e.g., top 10) and their received taco counts. If the command is run in the configured `UNIT_ANNOUNCE_CHANNEL`, the message is posted publicly to that channel instead.
 
 3.  **/tacos_history `[@username] [lines]`**
     *   **Action:** Shows recent taco transaction history.
@@ -82,4 +82,4 @@ Users will interact with the bot using the following slash commands:
 *   Weekly/Monthly Leaderboards
 *   Customizable Taco Emoji/Name
 *   Admin commands (e.g., adjust balances, reset limits)
-*   More detailed user stats (`/taco stats [@username]`) 
+*   More detailed user stats (`/taco stats [@username]`)  

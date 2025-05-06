@@ -142,7 +142,7 @@ Here are the available commands:
   Show this help message (visible only to you).
 
 *Rules:*
-- You can give a maximum of {config.DAILY_TACO_LIMIT} {unit_name_plural} per 24 hours.
+- You can give a maximum of {config.DAILY_UNIT_LIMIT} {unit_name_plural} per 24 hours.
 - You cannot give {unit_name_plural} to yourself.
 """
 
@@ -185,14 +185,14 @@ def handle_remaining_command(ack, body, client):
 
     # Get tacos given in the last 24h
     given_last_24h = database.get_tacos_given_last_24h(target_user_id)
-    remaining_tacos = max(0, config.DAILY_TACO_LIMIT - given_last_24h)
+    remaining_tacos = max(0, config.DAILY_UNIT_LIMIT - given_last_24h)
 
     # Format the response message
     emoji = get_emoji()
     if target_user_id == calling_user_id:
-        response_text = f"You have {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_TACO_LIMIT})."
+        response_text = f"You have {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_UNIT_LIMIT})."
     else:
-        response_text = f"{target_user_mention} has {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_TACO_LIMIT})."
+        response_text = f"{target_user_mention} has {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_UNIT_LIMIT})."
 
     # Send the ephemeral response
     try:
@@ -231,7 +231,7 @@ def handle_stats_command(ack, body, client):
 
     # Determine if we are in the announcement channel
     post_publicly = False
-    announce_channel_name = config.TACO_ANNOUNCE_CHANNEL
+    announce_channel_name = config.UNIT_ANNOUNCE_CHANNEL
     if announce_channel_name:
         try:
             # Look up channel info to compare IDs
@@ -547,8 +547,8 @@ def handle_give_command(ack, body, say, client):
     # 2. Check daily limit (rolling 24h)
     try:
         given_last_24h = database.get_tacos_given_last_24h(giver_id)
-        if given_last_24h + amount > config.DAILY_TACO_LIMIT:
-            remaining = config.DAILY_TACO_LIMIT - given_last_24h
+        if given_last_24h + amount > config.DAILY_UNIT_LIMIT:
+            remaining = config.DAILY_UNIT_LIMIT - given_last_24h
             # Send ephemeral error
             error_text = f":warning: You have given {given_last_24h} tacos in the last 24 hours. You can only give {remaining} more."
             try:
@@ -629,7 +629,7 @@ def handle_give_command(ack, body, say, client):
              logger.error(f"Unexpected error posting public message to original channel {channel_id}: {e}")
 
         # 2. Announce in configured channel (if different from source)
-        announce_channel_name = config.TACO_ANNOUNCE_CHANNEL
+        announce_channel_name = config.UNIT_ANNOUNCE_CHANNEL
         if announce_channel_name:
             try:
                 # Look up the source channel name for comparison (requires channels:read)
@@ -688,4 +688,4 @@ def get_emoji():
     else:
         return random.choice(config.ALTERNATE_EMOJIS)
 
-# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                            
+# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                                                                                                                                                                                        
