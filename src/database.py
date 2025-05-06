@@ -97,21 +97,32 @@ def add_transaction(giver_id, recipient_id, amount, note, source_channel_id):
     finally:
         close_db(conn)
 
-def get_leaderboard(limit=config.LEADERBOARD_LIMIT):
-    """Gets the leaderboard based on received tacos."""
+def get_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
+    """Gets the leaderboard based on received tacos, optionally filtered by time range."""
     query = """
     SELECT recipient_id, SUM(amount) as total_received
     FROM transactions
+    """
+    
+    params = []
+    
+    if time_range:
+        query += " WHERE timestamp >= ? "
+        params.append(_get_time_range_start(time_range))
+    
+    query += """
     GROUP BY recipient_id
     ORDER BY total_received DESC
     LIMIT ?
     """
+    params.append(limit)
+    
     conn = None
     leaders = []
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(query, (limit,))
+        cursor.execute(query, tuple(params))
         leaders = cursor.fetchall()
     except sqlite3.Error as e:
         logger.error(f"Error fetching leaderboard: {e}")
@@ -153,3 +164,43 @@ def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=
     finally:
         close_db(conn)
     return history  
+
+def _get_time_range_start(time_range):
+    """
+    Returns the start datetime for the specified time range.
+    
+    Args:
+        time_range (str): One of: 'last7days', 'lastweek', 'lastmonth', 'lastquarter', 
+                          'thismonth', 'thisquarter', 'alltime'
+    
+    Returns:
+        str: ISO formatted datetime string for the start of the time range
+    """
+    now = datetime.datetime.now()
+    
+    if time_range == 'last7days':
+        start_date = now - datetime.timedelta(days=7)
+    elif time_range == 'lastweek':
+        days_since_monday = now.weekday()
+        start_of_this_week = now - datetime.timedelta(days=days_since_monday)
+        start_date = start_of_this_week - datetime.timedelta(days=7)
+    elif time_range == 'lastmonth':
+        if now.month == 1:
+            start_date = datetime.datetime(now.year - 1, 12, 1)
+        else:
+            start_date = datetime.datetime(now.year, now.month - 1, 1)
+    elif time_range == 'lastquarter':
+        current_quarter = (now.month - 1) // 3 + 1
+        if current_quarter == 1:
+            start_date = datetime.datetime(now.year - 1, 10, 1)
+        else:
+            start_date = datetime.datetime(now.year, (current_quarter - 1) * 3 - 2, 1)
+    elif time_range == 'thismonth':
+        start_date = datetime.datetime(now.year, now.month, 1)
+    elif time_range == 'thisquarter':
+        current_quarter = (now.month - 1) // 3 + 1
+        start_date = datetime.datetime(now.year, (current_quarter - 1) * 3 + 1, 1)
+    else:
+        start_date = datetime.datetime(1970, 1, 1)
+        
+    return start_date.isoformat()        

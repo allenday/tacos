@@ -6,7 +6,7 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
 
 *   Give tacos: `/tacos_give <amount> <@user> <note>`
 *   View Leaderboard: `/tacos_leaderboard`
-*   View Stats: `/tacos_stats` (Shows leaderboard for now)
+*   View Stats: `/tacos_stats [time_range]` (Available time ranges: `alltime` (default), `last7days`, `lastweek`, `lastmonth`, `lastquarter`, `thismonth`, `thisquarter`)
 *   View Giving History: `/tacos_history [@user] [lines]`
 *   View Receiving History: `/tacos_received [lines]`
 *   Get Help: `/tacos_help`
@@ -104,4 +104,4 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
 
 ## Database
 
-The bot uses an SQLite database file (default: `tacos.db`) created in the project root to store transaction history. This file is excluded from Git by the `.gitignore` file.  
+The bot uses an SQLite database file (default: `tacos.db`) created in the project root to store transaction history. This file is excluded from Git by the `.gitignore` file.    

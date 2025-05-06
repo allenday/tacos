@@ -120,8 +120,8 @@ Here are the available commands:
   Give a specific number of {unit_name_plural} to someone with a reason. Uses the standard `@mention` (e.g. `<@U123>`) or attempts to look up `@displayname`.
   Example: `/tacos_give 3 @allenday great presentation!`
 
-* `/tacos_stats`
-  Show {unit_name} statistics (currently shows the leaderboard).
+* `/tacos_stats [time_range]`
+  Show {unit_name} statistics for a specific time range. Options: `alltime` (default), `last7days`, `lastweek`, `lastmonth`, `lastquarter`, `thismonth`, `thisquarter`.
 
 * `/tacos_history [@user] [lines]`
   Show recent {unit_name} *giving* history. Shows your giving history by default.
@@ -209,9 +209,44 @@ def handle_stats_command(ack, body, client):
     ack()
     user_id = body["user_id"]
     channel_id = body["channel_id"]
-    # client = say.client # Now passed directly
-
-    leaders = database.get_leaderboard()
+    text = body.get("text", "").strip().lower()
+    
+    valid_ranges = ["alltime", "last7days", "lastweek", "lastmonth", "lastquarter", "thismonth", "thisquarter"]
+    
+    time_range = None
+    time_range_label = "All Time"
+    
+    if text:
+        if text in valid_ranges:
+            time_range = text
+            # Format the label for display
+            if text == "alltime":
+                time_range_label = "All Time"
+            elif text == "last7days":
+                time_range_label = "Last 7 Days"
+            elif text == "lastweek":
+                time_range_label = "Last Week"
+            elif text == "lastmonth":
+                time_range_label = "Last Month"
+            elif text == "lastquarter":
+                time_range_label = "Last Quarter"
+            elif text == "thismonth":
+                time_range_label = "This Month"
+            elif text == "thisquarter":
+                time_range_label = "This Quarter"
+        else:
+            # Invalid time range specified
+            try:
+                client.chat_postEphemeral(
+                    channel=channel_id,
+                    user=user_id,
+                    text=f":warning: Invalid time range: `{text}`. Valid options are: `alltime` (default), `last7days`, `lastweek`, `lastmonth`, `lastquarter`, `thismonth`, `thisquarter`"
+                )
+            except Exception as e:
+                logger.error(f"Error sending ephemeral error message: {e}")
+            return
+    
+    leaders = database.get_leaderboard(time_range=time_range)
 
     if not leaders:
         # Send ephemeral error message
@@ -219,13 +254,13 @@ def handle_stats_command(ack, body, client):
             client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text=f"The leaderboard is empty! Start giving some :{get_emoji()}:!")
+                text=f"The leaderboard is empty for the selected time range ({time_range_label})! Start giving some :{get_emoji()}:!")
         except Exception as e:
             logger.error(f"Error sending ephemeral leaderboard empty message: {e}")
         return
 
     emoji = get_emoji()
-    message = f":{emoji}: *{config.UNIT_NAME.capitalize()} Leaderboard* :{emoji}:\n\n"
+    message = f":{emoji}: *{config.UNIT_NAME.capitalize()} Leaderboard ({time_range_label})* :{emoji}:\n\n"
     for i, leader in enumerate(leaders):
         message += f"{i+1}. <@{leader['recipient_id']}>: {leader['total_received']} {config.UNIT_NAME_PLURAL}\n"
 
@@ -254,9 +289,6 @@ def handle_stats_command(ack, body, client):
     try:
         if post_publicly:
             logger.info(f"Posting stats publicly in announcement channel {channel_id}")
-            # Use say() utility which is simpler when client is available implicitly via context
-            # Need to re-fetch 'say' if we use this pattern broadly or restructure
-            # For now, using client.chat_postMessage directly
             client.chat_postMessage(channel=channel_id, text=message)
         else:
             logger.info(f"Posting stats ephemerally to user {user_id} in channel {channel_id}")
@@ -688,4 +720,4 @@ def get_emoji():
     else:
         return random.choice(config.ALTERNATE_EMOJIS)
 
-# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                            
+# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                                                                                                                
