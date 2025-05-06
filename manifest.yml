@@ -1,52 +1,48 @@
+---
 display_information:
-  name: Taco Bot
-  description: A simple bot for giving and tracking virtual tacos within a Slack workspace.
-  background_color: "#f5f5dc"
-
+  name: Kudos Bot
+  description: A simple bot for giving and tracking virtual kudos within a Slack workspace.
+  background_color: '#f5f5dc'
 features:
   bot_user:
-    display_name: Taco Bot
+    display_name: Kudos Bot
     always_online: true
   app_home:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   slash_commands:
-    - command: /tacos_give
-      description: Give tacos to a user. Usage - /tacos_give <amount> <@user> <note>
-      usage_hint: "<amount> <@user> <note>"
-      should_escape: false
-    - command: /tacos_stats
-      description: Show taco statistics (leaderboard)
-      usage_hint: ""
-      should_escape: false
-    - command: /tacos_history
-      description: Show taco giving/receiving history. Usage - /tacos_history [@user] [lines]
-      usage_hint: "[@user] [lines]"
-      should_escape: false
-    - command: /tacos_received
-      description: Show your taco receiving history. Usage - /tacos_received [lines]
-      usage_hint: "[lines]"
-      should_escape: false
-    - command: /tacos_remaining
-      description: Check how many tacos you (or @user) can give. Usage - /tacos_remaining [@user]
-      usage_hint: "[@user]"
-      should_escape: false
-    - command: /tacos_help
-      description: Show help information for the Taco Bot
-      usage_hint: ""
-      should_escape: false
-
+  - command: /kudos_give
+    description: Give kudos to a user. Usage - /kudos_give <amount> <@user> <note>
+    should_escape: false
+    usage_hint: <amount> <@user> <note>
+  - command: /kudos_stats
+    description: Show kudos statistics (leaderboard)
+    should_escape: false
+  - command: /kudos_history
+    description: Show kudos giving/receiving history. Usage - /kudos_history [@user] [lines]
+    should_escape: false
+    usage_hint: '[@user] [lines]'
+  - command: /kudos_received
+    description: Show your kudos receiving history. Usage - /kudos_received [lines]
+    should_escape: false
+    usage_hint: '[lines]'
+  - command: /kudos_remaining
+    description: Check how many kudos you (or @user) can give. Usage - /kudos_remaining [@user]
+    should_escape: false
+    usage_hint: '[@user]'
+  - command: /kudos_help
+    description: Show help information for the Kudos Bot
+    should_escape: false
 oauth_config:
   scopes:
     bot:
-      - chat:write
-      - commands
-      - im:write
-      - chat:write.public
-      - channels:read
-      - users:read
-
+    - chat:write
+    - commands
+    - im:write
+    - chat:write.public
+    - channels:read
+    - users:read
 settings:
   interactivity:
     is_enabled: false

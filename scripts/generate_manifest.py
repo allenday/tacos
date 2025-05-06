@@ -64,14 +64,18 @@ def check_env_configuration():
         traceback.print_exc()
         return False
 
-def create_slash_command(cmd_prefix, command, description, usage_hint=""):
+def create_slash_command(cmd_prefix, command, description, usage_hint=None):
     """Helper function to create a slash command entry."""
-    return {
+    cmd = {
         "command": f"/{cmd_prefix}{command}",
         "description": description,
-        "usage_hint": usage_hint,
         "should_escape": False
     }
+    
+    if usage_hint and usage_hint.strip():
+        cmd["usage_hint"] = usage_hint
+        
+    return cmd
 
 def generate_manifest():
     """Generate a Slack app manifest based on the unit name configuration."""
@@ -141,26 +145,10 @@ def generate_manifest():
             }
         }
 
-        if unit_name.lower() != "taco" and unit_name.lower() != "tacos":
-            legacy_prefix = "tacos_"
-            legacy_commands = []
-            
-            for cmd in slash_commands:
-                cmd_suffix = cmd["command"].split("/")[1].split("_")[1]
-                
-                legacy_cmd = {
-                    "command": f"/{legacy_prefix}{cmd_suffix}",
-                    "description": f"[Legacy] {cmd['description']}",
-                    "usage_hint": cmd["usage_hint"],
-                    "should_escape": False
-                }
-                
-                legacy_commands.append(legacy_cmd)
-            
-            manifest["features"]["slash_commands"].extend(legacy_commands)
 
         manifest_path = Path(__file__).parent.parent / "manifest.yml"
         with open(manifest_path, "w") as f:
+            f.write("---\n")  # Add YAML document start marker
             yaml.dump(manifest, f, default_flow_style=False, sort_keys=False, width=120)
         
         print(f"Generated manifest.yml with {unit_name} as the command prefix")
