@@ -1,5 +1,6 @@
 # Environment variables
 .env
+.envrc
 
 # Python cache
 __pycache__/
@@ -31,4 +32,4 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST 
+MANIFEST
