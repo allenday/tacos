@@ -36,7 +36,7 @@ reaction_flows = {}
 processed_reactions = {}
 
 # --- Helper Function for Transaction Completion --- #
-def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, original_channel_id, original_message_ts):
+def _complete_unit_transaction(client, giver_id, recipient_id, amount, note, original_channel_id, original_message_ts):
     """Handles the final steps: DB insert, notifications, announcements (handles threads)."""
     success = database.add_transaction(
         giver_id=giver_id,
@@ -54,18 +54,18 @@ def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, ori
             if im_response and im_response.get("ok"):
                 client.chat_postMessage(
                     channel=im_response["channel"]["id"],
-                    text="Sorry, there was an error recording your taco transaction. Please try again."
+                    text=f"Sorry, there was an error recording your {config.UNIT_NAME} transaction. Please try again."
                 )
         except Exception as e:
              logger.error(f"Failed to notify giver {giver_id} about transaction failure: {e}")
         return False # Indicate failure
 
     # Transaction added successfully, proceed with notifications
-    taco_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
+    unit_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
     emoji = commands.get_emoji()
     completion_text = f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
     recipient_text = f"You received {amount} :{emoji}: from <@{giver_id}>! Reason: {note}"
-    public_text = f":{emoji}: <@{giver_id}> gave {amount} {taco_word} to <@{recipient_id}>! Reason: {note}"
+    public_text = f":{emoji}: <@{giver_id}> gave {amount} {unit_word} to <@{recipient_id}>! Reason: {note}"
 
     # 1. Notify giver (in DM, since reaction flow happens there)
     try:
@@ -101,7 +101,7 @@ def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, ori
     except SlackApiError as e:
         logger.error(f"Error posting public message to original channel {original_channel_id} (ts: {original_message_ts}): {e}")
 
-    # 4. Announce in central tacos channel (if different and configured)
+    # 4. Announce in central unit channel (if different and configured)
     announce_channel_name = config.UNIT_ANNOUNCE_CHANNEL
     if announce_channel_name:
         # Get channel ID for comparison (more reliable than name)
@@ -179,17 +179,7 @@ def register_command_handlers():
     app.command(command_utils.get_command_name(command_utils.CMD_HELP))(handle_help_slash_command)
     app.command(command_utils.get_command_name(command_utils.CMD_REMAINING))(handle_remaining_slash_command)
     
-    if config.UNIT_NAME.lower() not in ["taco", "tacos"]:
-        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_GIVE}")(handle_give_command)
-        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_STATS}")(handle_stats_slash_command)
-        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_HISTORY}")(handle_history_slash_command)
-        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_RECEIVED}")(handle_received_slash_command)
-        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_HELP}")(handle_help_slash_command)
-        app.command(f"/{command_utils.LEGACY_PREFIX}{command_utils.CMD_REMAINING}")(handle_remaining_slash_command)
-    
     logger.info(f"Registered command handlers with prefix: {command_utils.get_command_prefix()}")
-    if config.UNIT_NAME.lower() not in ["taco", "tacos"]:
-        logger.info(f"Also registered legacy command handlers with prefix: {command_utils.LEGACY_PREFIX}")
 
 register_command_handlers()
 
@@ -200,8 +190,15 @@ def handle_reaction_added(event, client, say):
     logger.info(f"Reaction added event: {event}")
     
     reaction = event.get("reaction", "")
-    if reaction not in config.ALL_EMOJIS:
-        logger.info(f"Ignoring reaction '{reaction}' as it's not in our list of supported emojis")
+    # Check if the reaction emoji is one we've configured with a point value
+    if reaction not in config.EMOJI_VALUES:
+        logger.info(f"Ignoring reaction '{reaction}' as it's not in the configured emoji values list from {config.EMOJI_CONFIG_FILE}")
+        return
+    
+    # Get the point value for this specific emoji
+    reaction_amount = config.EMOJI_VALUES.get(reaction, 0) # Default to 0 if somehow not found after above check
+    if reaction_amount <= 0:
+        logger.warning(f"Emoji '{reaction}' has a non-positive value ({reaction_amount}) configured. Ignoring.")
         return
     
     user_id = event.get("user")
@@ -230,7 +227,24 @@ def handle_reaction_added(event, client, say):
         )
         
         if not message_response.get("ok") or not message_response.get("messages"):
-            logger.error("Failed to fetch message or no messages returned")
+            # Check for specific not_in_channel error for reactions
+            if message_response.get("error") == "not_in_channel":
+                logger.warning(
+                    f"Bot is not in channel {channel_id}. Cannot process reaction on message {message_ts}. "
+                    f"Bot must be a member of the channel to read message history for reactions."
+                )
+                # Optionally, notify the reacting user that the bot needs to be in the channel.
+                try:
+                    im_response = client.conversations_open(users=user_id)
+                    if im_response.get("ok"):
+                        client.chat_postMessage(
+                            channel=im_response["channel"]["id"],
+                            text=f"I couldn't process your :{reaction}: reaction in <#{channel_id}> because I'm not a member of that channel. Please ask someone to add me, or react in a channel I'm in!"
+                        )
+                except Exception as dm_err:
+                    logger.error(f"Failed to send DM to user {user_id} about not_in_channel issue: {dm_err}")
+            else:
+                logger.error(f"Failed to fetch message {channel_id}/{message_ts} or no messages returned: {message_response.get('error', 'Unknown error')}")
             return
         
         message = message_response["messages"][0]
@@ -241,38 +255,53 @@ def handle_reaction_added(event, client, say):
         
         text = message.get("text", "")
         
+        # Extract original recipient
         recipient_match = re.search(r"to <@([UW][A-Z0-9]+)>!", text)
         if not recipient_match:
-            logger.info("Message doesn't appear to be a taco giving announcement")
+            logger.info(f"Message '{text}' doesn't appear to be a {config.UNIT_NAME} giving announcement (recipient parse failed)")
             return
-        
         recipient_id = recipient_match.group(1)
+
+        # Extract original note from the bot's announcement message
+        # Default note if parsing fails or original reason was effectively empty
+        parsed_original_note = f"Reaction :{reaction}: (original reason not captured)" 
+        reason_match = re.search(r"Reason: (.*)", text, re.IGNORECASE)
+        
+        if reason_match:
+            extracted_reason = reason_match.group(1).strip()
+            if extracted_reason: # Ensure the extracted reason is not empty after stripping
+                parsed_original_note = extracted_reason
+                logger.info(f"Extracted original note for reaction: '{parsed_original_note}'")
+            else:
+                logger.warning(f"Original reason was empty after 'Reason:' in bot message: '{text}'. Using default note.")
+        else:
+            logger.warning(f"Could not parse original reason using 'Reason: (.*)' from bot message: '{text}'. Using default note.")
         
         if user_id == recipient_id:
-            logger.info(f"User {user_id} tried to react to give themselves tacos")
+            logger.info(f"User {user_id} tried to react to give themselves {config.UNIT_NAME_PLURAL}")
             return
         
-        given_last_24h = database.get_tacos_given_last_24h(user_id)
-        if given_last_24h >= config.DAILY_UNIT_LIMIT:
+        # Check daily limit for the reactor - comparing against the specific reaction amount
+        given_last_24h = database.get_units_given_last_24h(user_id)
+        if given_last_24h + reaction_amount > config.DAILY_UNIT_LIMIT:
+            remaining_units = config.DAILY_UNIT_LIMIT - given_last_24h
             try:
                 im_response = client.conversations_open(users=user_id)
                 if im_response and im_response.get("ok"):
                     client.chat_postMessage(
                         channel=im_response["channel"]["id"],
-                        text=f"You've already given {given_last_24h} {config.UNIT_NAME_PLURAL} in the last 24 hours (limit: {config.DAILY_UNIT_LIMIT}). Try again later!"
+                        text=f"You've already given {given_last_24h} {config.UNIT_NAME_PLURAL} in the last 24 hours (limit: {config.DAILY_UNIT_LIMIT}). Your :{reaction}: reaction ({reaction_amount} points) would exceed the limit (remaining: {remaining_units})."
                     )
             except Exception as e:
                 logger.error(f"Error sending limit DM to user {user_id}: {e}")
             return
             
-        message_link = f"https://slack.com/archives/{channel_id}/p{message_ts.replace('.', '')}"
-        note = f"Reaction :{reaction}: to <{message_link}|message in channel>"
-        _complete_taco_transaction(
+        _complete_unit_transaction(
             client=client,
             giver_id=user_id,
             recipient_id=recipient_id,
-            amount=1,  # Reactions always count as +1
-            note=note,
+            amount=reaction_amount, # Use the specific amount for this reaction emoji
+            note=parsed_original_note, # Use the extracted (or default) original note
             original_channel_id=channel_id,
             original_message_ts=message_ts
         )

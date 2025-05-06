@@ -1,0 +1,20 @@
+# Example emoji values - Adjust names and values as needed!
+# Emoji names should match how Slack reports them (usually without colons).
+emoji_values:
+  open_mouth: 1 #default primary emoji
+  astonished: 1
+  telescope: 1
+  eyes: 1
+  sparkles: 2
+  100: 2
+  sunglasses: 2
+  nerd_face: 2
+  disguised_face: 2
+  heart_eyes: 2
+  fire: 3
+  firecracker: 3
+  raised_hands: 3
+  face_holding_back_tears: 4
+  exploding_head: 4
+  crown: 5
+  star-struck: 5

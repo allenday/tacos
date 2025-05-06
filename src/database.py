@@ -85,8 +85,8 @@ def init_db():
     finally:
         close_db(conn)
 
-def get_tacos_given_last_24h(giver_id):
-    """Calculates the total number of tacos given by a user in the last 24 hours."""
+def get_units_given_last_24h(giver_id):
+    """Calculates the total number of units given by a user in the last 24 hours."""
     # Calculate the timestamp for 24 hours ago
     time_24_hours_ago = datetime.datetime.now() - datetime.timedelta(hours=24)
     query = """
@@ -104,7 +104,7 @@ def get_tacos_given_last_24h(giver_id):
         if result and result[0] is not None:
             total = result[0]
     except sqlite3.Error as e:
-        logger.error(f"Error fetching tacos given in last 24h for {giver_id}: {e}")
+        logger.error(f"Error fetching units given in last 24h for {giver_id}: {e}")
     finally:
         close_db(conn)
     return total
@@ -112,7 +112,7 @@ def get_tacos_given_last_24h(giver_id):
 # --- Placeholder functions for command logic --- #
 
 def add_transaction(giver_id, recipient_id, amount, note, source_channel_id, original_message_ts=None, original_channel_id=None):
-    """Adds a new taco transaction to the database, including the source channel and original message reference."""
+    """Adds a new unit transaction to the database, including the source channel and original message reference."""
     query = """
     INSERT INTO transactions (giver_id, recipient_id, amount, note, source_channel_id, original_message_ts, original_channel_id)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -134,7 +134,7 @@ def add_transaction(giver_id, recipient_id, amount, note, source_channel_id, ori
         close_db(conn)
 
 def get_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
-    """Gets the leaderboard based on received tacos, optionally filtered by time range.
+    """Gets the leaderboard based on received units, optionally filtered by time range.
     
     Args:
         limit: Maximum number of results to return
@@ -235,8 +235,9 @@ def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
     """
     base_query = """
     SELECT original_channel_id, original_message_ts, COUNT(*) as reaction_count, 
-           GROUP_CONCAT(giver_id) as givers, GROUP_CONCAT(recipient_id) as recipients,
-           GROUP_CONCAT(note) as notes
+           GROUP_CONCAT(DISTINCT giver_id) as givers,
+           recipient_id,
+           GROUP_CONCAT(DISTINCT note) as notes
     FROM transactions
     WHERE original_message_ts IS NOT NULL AND original_channel_id IS NOT NULL
     """
@@ -335,7 +336,7 @@ def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
     return events
 
 def get_reason_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
-    """Gets a leaderboard of recipient/reason pairs that earned the most wows, 
+    """Gets a leaderboard of recipient/reason pairs that earned the most units (based on transaction amounts),
     optionally filtered by time range.
     
     Args:
@@ -347,7 +348,7 @@ def get_reason_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
     SELECT 
         recipient_id,
         LOWER(TRIM(note)) as reason, 
-        SUM(amount) as total_wows, 
+        SUM(amount) as total_units, 
         COUNT(DISTINCT giver_id) as unique_givers
     FROM transactions
     WHERE note IS NOT NULL AND TRIM(note) != ''
@@ -410,8 +411,8 @@ def get_reason_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
     
     query = base_query + where_clause_suffix + """
     GROUP BY recipient_id, reason
-    HAVING total_wows > 0 
-    ORDER BY total_wows DESC, unique_givers DESC, recipient_id ASC, reason ASC
+    HAVING total_units > 0 
+    ORDER BY total_units DESC, unique_givers DESC, recipient_id ASC, reason ASC
     LIMIT ?
     """
     params.append(limit)

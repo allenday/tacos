@@ -18,13 +18,3 @@ CMD_REMAINING = "remaining"
 CMD_HELP = "help"
 
 command_handlers = {}
-
-LEGACY_PREFIX = "tacos_"
-LEGACY_COMMANDS = [
-    f"/{LEGACY_PREFIX}{CMD_GIVE}",
-    f"/{LEGACY_PREFIX}{CMD_STATS}",
-    f"/{LEGACY_PREFIX}{CMD_HISTORY}",
-    f"/{LEGACY_PREFIX}{CMD_RECEIVED}",
-    f"/{LEGACY_PREFIX}{CMD_REMAINING}",
-    f"/{LEGACY_PREFIX}{CMD_HELP}"
-]

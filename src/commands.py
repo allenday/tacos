@@ -99,7 +99,7 @@ def get_user_id_from_mention(client: WebClient, mention_text: str, logger: loggi
     return None
 
 def handle_help_command(ack, body, client):
-    """Handles the /tacos_help command by sending an ephemeral message."""
+    """Handles the help command (e.g., /wow_help) by sending an ephemeral message."""
     ack() # Acknowledge the command immediately
     user_id = body["user_id"]
     channel_id = body["channel_id"]
@@ -160,7 +160,7 @@ Here are the available commands:
         logger.error(f"Error sending ephemeral help message to user {user_id} in channel {channel_id}: {e}")
 
 def handle_remaining_command(ack, body, client):
-    """Handles the /tacos_remaining command, checking tacos left to give."""
+    """Handles the remaining command (e.g., /wow_remaining), checking units left to give."""
     ack()
     text = body.get("text", "").strip()
     calling_user_id = body["user_id"]
@@ -186,16 +186,17 @@ def handle_remaining_command(ack, body, client):
                 logger.error(f"Error sending ephemeral message for invalid user in remaining command: {e}")
             return
 
-    # Get tacos given in the last 24h
-    given_last_24h = database.get_tacos_given_last_24h(target_user_id)
-    remaining_tacos = max(0, config.DAILY_UNIT_LIMIT - given_last_24h)
+    # Get units given in the last 24h
+    given_last_24h = database.get_units_given_last_24h(target_user_id)
+    remaining_units = max(0, config.DAILY_UNIT_LIMIT - given_last_24h)
 
     # Format the response message
     emoji = get_emoji()
+    unit_name_plural = config.UNIT_NAME_PLURAL
     if target_user_id == calling_user_id:
-        response_text = f"You have {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_UNIT_LIMIT})."
+        response_text = f"You have {remaining_units} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_UNIT_LIMIT} {unit_name_plural})."
     else:
-        response_text = f"{target_user_mention} has {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_UNIT_LIMIT})."
+        response_text = f"{target_user_mention} has {remaining_units} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_UNIT_LIMIT} {unit_name_plural})."
 
     # Send the ephemeral response
     try:
@@ -208,7 +209,7 @@ def handle_remaining_command(ack, body, client):
         logger.error(f"Error sending ephemeral message for remaining command: {e}") 
 
 def handle_stats_command(ack, body, client):
-    """Handles the /tacos_stats command. Shows leaderboard publicly if in announce channel, otherwise ephemerally."""
+    """Handles the stats command (e.g., /wow_stats). Shows leaderboard publicly if in announce channel, otherwise ephemerally."""
     ack()
     user_id = body["user_id"]
     channel_id = body["channel_id"]
@@ -272,66 +273,69 @@ def handle_stats_command(ack, body, client):
     
     if events:
         message += f"\n\n:{emoji}: *Events with Most Reactions ({time_range_display})* :{emoji}:\n\n"
-        for i, event in enumerate(events):
-            logger.info(f"Processing event: {event}")
-            event_channel_id = event['original_channel_id']
-            message_ts = event['original_message_ts']
-            reaction_count = event['reaction_count']
+        for i, event_row in enumerate(events):
+            logger.info(f"Processing event: {dict(event_row)}")
             
-            notes_str = event.get('notes', '')
-            givers_str = event.get('givers', '')
-            # recipients_str = event.get('recipients', '') # Not directly used for display here
+            try:
+                event_channel_id = event_row['original_channel_id']
+                message_ts = event_row['original_message_ts']
+                reaction_count = event_row['reaction_count']
+                event_recipient_id = event_row['recipient_id'] # Get the recipient of the event
+            except (KeyError, IndexError) as e:
+                logger.error(f"Critical key missing in event_row for event leaderboard: {e}. Row: {dict(event_row)}")
+                continue # Skip this event if critical info is missing
+
+            try:
+                notes_str = event_row['notes']
+            except (KeyError, IndexError):
+                notes_str = ''
+            try:
+                givers_str = event_row['givers']
+            except (KeyError, IndexError):
+                givers_str = ''
             
             notes = notes_str.split(',') if notes_str else []
             givers = givers_str.split(',') if givers_str else []
-            # recipients = recipients_str.split(',') if recipients_str else []
             
             primary_note = "No reason provided"
-            # Attempt to find a non-reaction note if multiple exist due to GROUP_CONCAT
+            link_display_text = "Original Message"
+
             if notes:
-                # Prefer notes that are not the default reaction placeholder
-                non_reaction_notes = [n for n in notes if n and not n.lower().startswith("reaction for:")]
+                non_reaction_notes = [n for n in notes if n and not n.lower().startswith("reaction :")] # More generic check for reaction notes
                 if non_reaction_notes:
-                    primary_note = non_reaction_notes[0] # Take the first one found
+                    primary_note = non_reaction_notes[0]
+                    link_display_text = primary_note # Use the actual note as link text if it's not a reaction placeholder
                 elif notes[0]: # Fallback to the first note if all are reaction-like or only one exists
                     primary_note = notes[0]
+                    # If it's still a reaction note, use a generic display text for the link
+                    if primary_note.lower().startswith("reaction :"):
+                        link_display_text = f"Reacted Message ({reaction_count} reactions)"
+                    else:
+                        link_display_text = primary_note
             
-            # Create a proper link to the original message
             message_link = f"https://slack.com/archives/{event_channel_id}/p{message_ts.replace('.', '')}"
             
             unique_givers = set([g for g in givers if g])
             unique_giver_count = len(unique_givers)
             
-            # Format the message with detailed information
-            message += f"{i+1}. <{message_link}|{primary_note if primary_note else 'Original Message'}>: {reaction_count} reactions from {unique_giver_count} people\n"
-            
-            # if unique_giver_count > 0:
-            #     message += f"   *Reacted by:* "
-            #     giver_counts = {}
-            #     for giver in givers:
-            #         if giver:  # Skip empty strings
-            #             giver_counts[giver] = giver_counts.get(giver, 0) + 1
-            #     
-            #     giver_list = []
-            #     for giver, count in giver_counts.items():
-            #         giver_list.append(f"<@{giver}> ({count})") # Removed count for brevity
-            #     
-            #     message += ", ".join(giver_list) + "\n"
+            # Display format: Link to message, then details of reactions
+            event_text = f"for <@{event_recipient_id}>"
+            message += f"{i+1}. <{message_link}|{link_display_text}> {event_text}: {reaction_count} {config.UNIT_NAME_PLURAL} from {unique_giver_count} people\n"
     else:
         logger.info("No events found for the event leaderboard")
 
     # --- Add Top Wow Reasons Leaderboard ---
     reason_leaders = database.get_reason_leaderboard(time_range=time_range)
     if reason_leaders:
-        message += f"\n\n:{emoji}: *Top Wow Reasons ({time_range_display})* :{emoji}:\n\n"
+        message += f"\n\n:{emoji}: *Top {config.UNIT_NAME.capitalize()} Reasons ({time_range_display})* :{emoji}:\n\n"
         for i, reason_entry in enumerate(reason_leaders):
             recipient_id = reason_entry['recipient_id']
             reason_text = reason_entry['reason']
-            total_wows = reason_entry['total_wows']
+            total_units_received = reason_entry['total_units']
             unique_givers = reason_entry['unique_givers']
             plural_givers = "person" if unique_givers == 1 else "people"
-            plural_wows = config.UNIT_NAME if total_wows == 1 else config.UNIT_NAME_PLURAL
-            message += f"{i+1}. For <@{recipient_id}>, reason \"{reason_text}\": {total_wows} {plural_wows} from {unique_givers} unique {plural_givers}\n"
+            plural_units_text = config.UNIT_NAME if total_units_received == 1 else config.UNIT_NAME_PLURAL
+            message += f"{i+1}. For <@{recipient_id}>, reason \"{reason_text}\": {total_units_received} {plural_units_text} from {unique_givers} unique {plural_givers}\n"
     else:
         logger.info("No reasons found for the reason leaderboard")
 
@@ -375,7 +379,7 @@ def handle_stats_command(ack, body, client):
         logger.error(f"Error posting stats message (publicly: {post_publicly}): {e}")
 
 def handle_history_command(ack, body, say, client):
-    """Handles the /tacos_history command by sending an ephemeral message."""
+    """Handles the history command (e.g., /wow_history) by sending an ephemeral message."""
     ack()
     text = body.get("text", "").strip()
     calling_user_id = body["user_id"]
@@ -392,7 +396,7 @@ def handle_history_command(ack, body, say, client):
     arg1 = parts[0] if parts else None
     arg2 = parts[1] if len(parts) > 1 else None
 
-    # Parse arguments: /taco history [@user] [lines] or /taco history [lines]
+    # Parse arguments: /{prefix}_history [@user] [lines] or /{prefix}_history [lines]
     # If @user is present, we show history where they are the RECIPIENT.
     # Otherwise, we show history where the caller is the GIVER.
     if arg1:
@@ -506,7 +510,7 @@ def handle_history_command(ack, body, say, client):
         logger.error(f"Error sending ephemeral history message: {e}")
 
 def handle_received_command(ack, body, say, client):
-    """Handles the /taco received command by sending an ephemeral message."""
+    """Handles the received command (e.g., /wow_received) by sending an ephemeral message."""
     ack()
     text = body.get("text", "").strip()
     calling_user_id = body["user_id"]
@@ -517,7 +521,7 @@ def handle_received_command(ack, body, say, client):
 
     lines = config.DEFAULT_HISTORY_LINES
 
-    # Parse arguments: /taco received [lines]
+    # Parse arguments: /{prefix}_received [lines]
     if parts:
         arg1 = parts[0]
         if arg1.isdigit():
@@ -565,7 +569,7 @@ def handle_received_command(ack, body, say, client):
 
     # Build the success message
     emoji = get_emoji()
-    title = f":{emoji}: *Your Recent {config.UNIT_NAME.capitalize()} Receiving History* :{emoji}:\\n\\n"
+    title = f":{emoji}: *Your Recent {config.UNIT_NAME.capitalize()} Receiving History* :{emoji}:\n\n"
 
     message_lines = []
     for entry in history:
@@ -588,7 +592,7 @@ def handle_received_command(ack, body, say, client):
          logger.error(f"Error sending ephemeral received history message: {e}")
 
 def handle_give_command(ack, body, say, client):
-    """Handles the /tacos_give command."""
+    """Handles the give command (e.g., /wow_give)."""
     ack()
     text = body.get("text", "").strip()
     giver_id = body["user_id"]
@@ -598,7 +602,7 @@ def handle_give_command(ack, body, say, client):
 
     if len(parts) < 3:
         # Send ephemeral error
-        error_text = f":warning: Usage: `/tacos_give <amount> <@username> <note>`"
+        error_text = f":warning: Usage: `/{command_utils.get_command_prefix()}give <amount> <@username> <note>`" # Use dynamic prefix
         try:
             client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
         except Exception as e:
@@ -643,7 +647,7 @@ def handle_give_command(ack, body, say, client):
     # 1. No self-giving
     if giver_id == recipient_id:
         # Send ephemeral error
-        error_text = ":warning: You can't give tacos to yourself! Sharing is caring."
+        error_text = f":warning: You can't give {config.UNIT_NAME_PLURAL} to yourself! Sharing is caring."
         try:
             client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
         except Exception as e:
@@ -652,11 +656,11 @@ def handle_give_command(ack, body, say, client):
 
     # 2. Check daily limit (rolling 24h)
     try:
-        given_last_24h = database.get_tacos_given_last_24h(giver_id)
+        given_last_24h = database.get_units_given_last_24h(giver_id)
         if given_last_24h + amount > config.DAILY_UNIT_LIMIT:
-            remaining = config.DAILY_UNIT_LIMIT - given_last_24h
+            remaining_units = config.DAILY_UNIT_LIMIT - given_last_24h
             # Send ephemeral error
-            error_text = f":warning: You have given {given_last_24h} tacos in the last 24 hours. You can only give {remaining} more."
+            error_text = f":warning: You have given {given_last_24h} {config.UNIT_NAME_PLURAL} in the last 24 hours. You can only give {remaining_units} more."
             try:
                 client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
             except Exception as e:
@@ -665,7 +669,7 @@ def handle_give_command(ack, body, say, client):
     except Exception as e:
         logger.error(f"Error checking daily limit for {giver_id}: {e}")
         # Send ephemeral error
-        error_text = ":warning: There was an internal error checking your taco limit. Please try again later."
+        error_text = f":warning: There was an internal error checking your {config.UNIT_NAME} limit. Please try again later."
         try:
             client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
         except Exception as e:
@@ -690,6 +694,8 @@ def handle_give_command(ack, body, say, client):
     if success:
         # --- Success Notifications --- #
         emoji = get_emoji()  # Get random emoji from configured list
+        unit_name = config.UNIT_NAME
+        unit_name_plural = config.UNIT_NAME_PLURAL
 
         # Notify giver (ephemeral in original channel - should work if previous validation passed)
         giver_success_text = f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
@@ -721,7 +727,7 @@ def handle_give_command(ack, body, say, client):
              logger.error(f"Unexpected error opening IM or sending DM to {recipient_id}: {e}")
 
         # --- Announcements --- #
-        unit_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
+        unit_word = unit_name if amount == 1 else unit_name_plural
         public_text = f":{emoji}: <@{giver_id}> gave {amount} {unit_word} to <@{recipient_id}>! Reason: {note}"
 
         # 1. Announce in original channel
@@ -753,9 +759,7 @@ def handle_give_command(ack, body, say, client):
                      logger.warning(f"Unexpected error verifying source channel {channel_id}: {e}")
 
                 if not is_announce_channel:
-                    unit_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
-                    public_text = f":{emoji}: <@{giver_id}> gave {amount} {unit_word} to <@{recipient_id}>! Reason: {note}"
-                    # Post by name - requires chat:write.public if bot isn't in channel
+                    # Reuse unit_word and public_text defined above
                     client.chat_postMessage(
                         channel=f"#{announce_channel_name}",
                         text=public_text
@@ -769,7 +773,7 @@ def handle_give_command(ack, body, say, client):
 
     else:
         # General failure adding transaction - Send ephemeral error
-        error_text = ":warning: Sorry, there was an internal error recording your taco transaction. Please try again later."
+        error_text = f":warning: Sorry, there was an internal error recording your {config.UNIT_NAME} transaction. Please try again later."
         try:
             client.chat_postEphemeral(channel=channel_id, user=giver_id, text=error_text)
         except Exception as e:
