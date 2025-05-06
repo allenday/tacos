@@ -32,11 +32,14 @@ def init_db():
         amount INTEGER NOT NULL,
         note TEXT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        source_channel_id TEXT
+        source_channel_id TEXT,
+        original_message_ts TEXT,
+        original_channel_id TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_giver_timestamp ON transactions (giver_id, timestamp);
     CREATE INDEX IF NOT EXISTS idx_recipient_timestamp ON transactions (recipient_id, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_original_message ON transactions (original_channel_id, original_message_ts);
     """
     conn = None
     try:
@@ -76,23 +79,24 @@ def get_tacos_given_last_24h(giver_id):
 
 # --- Placeholder functions for command logic --- #
 
-def add_transaction(giver_id, recipient_id, amount, note, source_channel_id):
-    """Adds a new taco transaction to the database, including the source channel."""
+def add_transaction(giver_id, recipient_id, amount, note, source_channel_id, original_message_ts=None, original_channel_id=None):
+    """Adds a new taco transaction to the database, including the source channel and original message reference."""
     query = """
-    INSERT INTO transactions (giver_id, recipient_id, amount, note, source_channel_id)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO transactions (giver_id, recipient_id, amount, note, source_channel_id, original_message_ts, original_channel_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
     """
     conn = None
     try:
         conn = get_db()
         cursor = conn.cursor()
-        cursor.execute(query, (giver_id, recipient_id, amount, note, source_channel_id))
+        cursor.execute(query, (giver_id, recipient_id, amount, note, source_channel_id, original_message_ts, original_channel_id))
         conn.commit()
         logger.info(f"Transaction added: {giver_id} -> {recipient_id} ({amount} {config.UNIT_NAME_PLURAL}) from channel {source_channel_id}")
         return True
     except sqlite3.Error as e:
         logger.error(f"Error adding transaction: {e}")
-        conn.rollback() # Rollback changes on error
+        if conn:
+            conn.rollback() # Rollback changes on error
         return False
     finally:
         close_db(conn)
@@ -119,9 +123,33 @@ def get_leaderboard(limit=config.LEADERBOARD_LIMIT):
         close_db(conn)
     return leaders
 
+def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT):
+    """Gets a leaderboard of events that earned the most wows."""
+    query = """
+    SELECT original_channel_id, original_message_ts, COUNT(*) as reaction_count, 
+           GROUP_CONCAT(giver_id) as givers
+    FROM transactions
+    WHERE original_message_ts IS NOT NULL AND original_channel_id IS NOT NULL
+    GROUP BY original_channel_id, original_message_ts
+    ORDER BY reaction_count DESC
+    LIMIT ?
+    """
+    conn = None
+    events = []
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute(query, (limit,))
+        events = cursor.fetchall()
+    except sqlite3.Error as e:
+        logger.error(f"Error fetching event leaderboard: {e}")
+    finally:
+        close_db(conn)
+    return events
+
 def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=None):
     """Gets recent transaction history, filtering by giver or recipient."""
-    base_query = "SELECT giver_id, recipient_id, amount, note, timestamp, source_channel_id FROM transactions"
+    base_query = "SELECT giver_id, recipient_id, amount, note, timestamp, source_channel_id, original_message_ts, original_channel_id FROM transactions"
     filters = []
     params = []
 
@@ -152,4 +180,4 @@ def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=
         logger.error(f"Error fetching history: {e}")
     finally:
         close_db(conn)
-    return history  
+    return history                

@@ -43,7 +43,9 @@ def _complete_taco_transaction(client, giver_id, recipient_id, amount, note, ori
         recipient_id=recipient_id,
         amount=amount,
         note=note,
-        source_channel_id=original_channel_id
+        source_channel_id=original_channel_id,
+        original_message_ts=original_message_ts,
+        original_channel_id=original_channel_id
     )
     if not success:
         try:
@@ -328,4 +330,4 @@ def handle_message_events(body, logger):
 #     # ... (DM processing logic removed)
 
 if __name__ == "__main__":
-    main()                                                                                                                                                                                                                                                                                                                                
+    main()                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                
