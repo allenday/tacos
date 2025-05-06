@@ -131,7 +131,9 @@ def generate_manifest():
                         "im:write",
                         "chat:write.public",
                         "channels:read",
-                        "users:read"
+                        "users:read",
+                        "reactions:read",
+                        "reactions:write"
                     ]
                 }
             },
