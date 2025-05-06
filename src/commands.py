@@ -105,39 +105,45 @@ def handle_help_command(ack, body, client):
     channel_id = body["channel_id"]
     # client = say.client # Get the client object from the say utility context - Now passed directly
 
+    emoji = get_emoji()
+    unit_name = config.UNIT_NAME
+    unit_name_plural = config.UNIT_NAME_PLURAL
+    unit_name_cap = unit_name.capitalize()
+    unit_name_plural_cap = unit_name_plural.capitalize()
+    
     help_text = f"""
-:taco: *Taco Bot Help* :taco:
+:{emoji}: *{unit_name_cap} Bot Help* :{emoji}:
 
 Here are the available commands:
 
 * `/tacos_give <amount> <@user> <note>`
-  Give a specific number of tacos to someone with a reason. Uses the standard `@mention` (e.g. `<@U123>`) or attempts to look up `@displayname`.
+  Give a specific number of {unit_name_plural} to someone with a reason. Uses the standard `@mention` (e.g. `<@U123>`) or attempts to look up `@displayname`.
   Example: `/tacos_give 3 @allenday great presentation!`
 
 * `/tacos_stats`
-  Show taco statistics (currently shows the leaderboard).
+  Show {unit_name} statistics (currently shows the leaderboard).
 
 * `/tacos_history [@user] [lines]`
-  Show recent taco *giving* history. Shows your giving history by default.
-  If you specify `@user`, it shows the history of tacos *received* by that user.
+  Show recent {unit_name} *giving* history. Shows your giving history by default.
+  If you specify `@user`, it shows the history of {unit_name_plural} *received* by that user.
   `[lines]` is optional (default: {config.DEFAULT_HISTORY_LINES}, max: 50).
   Example: `/tacos_history @allenday 5`
   Example: `/tacos_history 20`
 
 * `/tacos_received [lines]`
-  Show your recent taco *receiving* history.
+  Show your recent {unit_name} *receiving* history.
   `[lines]` is optional (default: {config.DEFAULT_HISTORY_LINES}, max: 50).
   Example: `/tacos_received 15`
 
 * `/tacos_remaining [@user]`
-  Check how many tacos you (or `@user`, if specified) have left to give in the next 24 hours. Responds privately.
+  Check how many {unit_name_plural} you (or `@user`, if specified) have left to give in the next 24 hours. Responds privately.
 
 * `/tacos_help`
   Show this help message (visible only to you).
 
 *Rules:*
-- You can give a maximum of {config.DAILY_TACO_LIMIT} tacos per 24 hours.
-- You cannot give tacos to yourself.
+- You can give a maximum of {config.DAILY_TACO_LIMIT} {unit_name_plural} per 24 hours.
+- You cannot give {unit_name_plural} to yourself.
 """
 
     try:
@@ -182,10 +188,11 @@ def handle_remaining_command(ack, body, client):
     remaining_tacos = max(0, config.DAILY_TACO_LIMIT - given_last_24h)
 
     # Format the response message
+    emoji = get_emoji()
     if target_user_id == calling_user_id:
-        response_text = f"You have {remaining_tacos} :taco: remaining to give in the next 24 hours (out of {config.DAILY_TACO_LIMIT})."
+        response_text = f"You have {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_TACO_LIMIT})."
     else:
-        response_text = f"{target_user_mention} has {remaining_tacos} :taco: remaining to give in the next 24 hours (out of {config.DAILY_TACO_LIMIT})."
+        response_text = f"{target_user_mention} has {remaining_tacos} :{emoji}: remaining to give in the next 24 hours (out of {config.DAILY_TACO_LIMIT})."
 
     # Send the ephemeral response
     try:
@@ -212,14 +219,15 @@ def handle_stats_command(ack, body, client):
             client.chat_postEphemeral(
                 channel=channel_id,
                 user=user_id,
-                text="The leaderboard is empty! Start giving some :taco:!")
+                text=f"The leaderboard is empty! Start giving some :{get_emoji()}:!")
         except Exception as e:
             logger.error(f"Error sending ephemeral leaderboard empty message: {e}")
         return
 
-    message = ":taco: *Taco Leaderboard* :taco:\n\n"
+    emoji = get_emoji()
+    message = f":{emoji}: *{config.UNIT_NAME.capitalize()} Leaderboard* :{emoji}:\n\n"
     for i, leader in enumerate(leaders):
-        message += f"{i+1}. <@{leader['recipient_id']}>: {leader['total_received']} tacos\n"
+        message += f"{i+1}. <@{leader['recipient_id']}>: {leader['total_received']} {config.UNIT_NAME_PLURAL}\n"
 
     # Determine if we are in the announcement channel
     post_publicly = False
@@ -339,11 +347,11 @@ def handle_history_command(ack, body, say, client):
         # Use ephemeral message for errors
         error_text = ""
         if recipient_filter_id:
-            error_text = f":warning: No taco history found for <@{recipient_filter_id}>."
+            error_text = f":warning: No {config.UNIT_NAME} history found for <@{recipient_filter_id}>."
         elif giver_filter_id:
-            error_text = ":warning: You haven't given any tacos recently!"
+            error_text = f":warning: You haven't given any {config.UNIT_NAME_PLURAL} recently!"
         else: # Should not happen with current logic, but for completeness
-            error_text = ":warning: No taco history found."
+            error_text = f":warning: No {config.UNIT_NAME} history found."
 
         try:
             client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
@@ -353,13 +361,15 @@ def handle_history_command(ack, body, say, client):
 
     # Build the success message
     title = ""
+    emoji = get_emoji()
+    unit_name_cap = config.UNIT_NAME.capitalize()
     if recipient_filter_id:
-        title = f":taco: *Recent Taco History for <@{recipient_filter_id}>* (Received) :taco:\n\n"
+        title = f":{emoji}: *Recent {unit_name_cap} History for <@{recipient_filter_id}>* (Received) :{emoji}:\n\n"
     elif giver_filter_id:
-        title = f":taco: *Your Recent Taco Giving History* :taco:\n\n"
+        title = f":{emoji}: *Your Recent {unit_name_cap} Giving History* :{emoji}:\n\n"
     else:
         # Fallback message, should ideally not be reached with current logic
-        title = f":taco: *Recent Taco History* :taco:\n\n"
+        title = f":{emoji}: *Recent {unit_name_cap} History* :{emoji}:\n\n"
 
     message_lines = []
     for entry in history:
@@ -440,7 +450,7 @@ def handle_received_command(ack, body, say, client):
 
     if not history:
         # Use ephemeral message
-        error_text = ":warning: You haven't received any tacos recently!"
+        error_text = f":warning: You haven't received any {config.UNIT_NAME_PLURAL} recently!"
         try:
             client.chat_postEphemeral(channel=channel_id, user=calling_user_id, text=error_text)
         except Exception as e:
@@ -448,7 +458,8 @@ def handle_received_command(ack, body, say, client):
         return
 
     # Build the success message
-    title = f":taco: *Your Recent Taco Receiving History* :taco:\\n\\n"
+    emoji = get_emoji()
+    title = f":{emoji}: *Your Recent {config.UNIT_NAME.capitalize()} Receiving History* :{emoji}:\\n\\n"
 
     message_lines = []
     for entry in history:
@@ -570,7 +581,7 @@ def handle_give_command(ack, body, say, client):
 
     if success:
         # --- Success Notifications --- #
-        emoji = "taco" # Use a static emoji for now
+        emoji = get_emoji()  # Get random emoji from configured list
 
         # Notify giver (ephemeral in original channel - should work if previous validation passed)
         giver_success_text = f"You gave {amount} :{emoji}: to <@{recipient_id}>! Reason: {note}"
@@ -602,8 +613,8 @@ def handle_give_command(ack, body, say, client):
              logger.error(f"Unexpected error opening IM or sending DM to {recipient_id}: {e}")
 
         # --- Announcements --- #
-        taco_word = "taco" if amount == 1 else "tacos"
-        public_text = f":{emoji}: <@{giver_id}> gave {amount} {taco_word} to <@{recipient_id}>! Reason: {note}"
+        unit_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
+        public_text = f":{emoji}: <@{giver_id}> gave {amount} {unit_word} to <@{recipient_id}>! Reason: {note}"
 
         # 1. Announce in original channel
         try:
@@ -634,8 +645,8 @@ def handle_give_command(ack, body, say, client):
                      logger.warning(f"Unexpected error verifying source channel {channel_id}: {e}")
 
                 if not is_announce_channel:
-                    taco_word = "taco" if amount == 1 else "tacos"
-                    public_text = f":{emoji}: <@{giver_id}> gave {amount} {taco_word} to <@{recipient_id}>! Reason: {note}"
+                    unit_word = config.UNIT_NAME if amount == 1 else config.UNIT_NAME_PLURAL
+                    public_text = f":{emoji}: <@{giver_id}> gave {amount} {unit_word} to <@{recipient_id}>! Reason: {note}"
                     # Post by name - requires chat:write.public if bot isn't in channel
                     client.chat_postMessage(
                         channel=f"#{announce_channel_name}",
@@ -668,4 +679,13 @@ def _send_error_dm(client, user_id, text, logger):
     except Exception as e:
         logger.error(f"Error sending error DM to user {user_id}: {e}")
 
-# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command) 
+import random  # Add at the top of the file if not already imported
+
+def get_emoji():
+    """Returns a random emoji from the configured emojis. Primary emoji has higher probability."""
+    if random.random() < 0.7:
+        return config.PRIMARY_EMOJI
+    else:
+        return random.choice(config.ALTERNATE_EMOJIS)
+
+# ... (rest of the command handlers: handle_stats_command, handle_history_command, handle_received_command, handle_help_command, handle_remaining_command)                            

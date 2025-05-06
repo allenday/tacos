@@ -86,6 +86,9 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
         # Bot Configuration (Optional - Defaults shown)
         # DAILY_TACO_LIMIT=5
         # TACO_ANNOUNCE_CHANNEL="tacos" # Channel name (no #) for public announcements
+        # UNIT_NAME="kudos" # The name of the unit (default: "kudos")
+        # UNIT_NAME_PLURAL="kudos" # The plural form of the unit name (default: unit_name + "s")
+        # PRIMARY_EMOJI="star-struck" # The primary emoji to use (default: "star-struck")
         ```
     *   Replace the placeholder values with your actual tokens.
 
@@ -101,4 +104,4 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
 
 ## Database
 
-The bot uses an SQLite database file (default: `tacos.db`) created in the project root to store transaction history. This file is excluded from Git by the `.gitignore` file. 
+The bot uses an SQLite database file (default: `tacos.db`) created in the project root to store transaction history. This file is excluded from Git by the `.gitignore` file.  

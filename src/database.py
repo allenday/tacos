@@ -88,7 +88,7 @@ def add_transaction(giver_id, recipient_id, amount, note, source_channel_id):
         cursor = conn.cursor()
         cursor.execute(query, (giver_id, recipient_id, amount, note, source_channel_id))
         conn.commit()
-        logger.info(f"Transaction added: {giver_id} -> {recipient_id} ({amount} tacos) from channel {source_channel_id}")
+        logger.info(f"Transaction added: {giver_id} -> {recipient_id} ({amount} {config.UNIT_NAME_PLURAL}) from channel {source_channel_id}")
         return True
     except sqlite3.Error as e:
         logger.error(f"Error adding transaction: {e}")
@@ -152,4 +152,4 @@ def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=
         logger.error(f"Error fetching history: {e}")
     finally:
         close_db(conn)
-    return history 
+    return history  
