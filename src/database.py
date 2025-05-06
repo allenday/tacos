@@ -203,7 +203,8 @@ def get_event_leaderboard(limit=config.LEADERBOARD_LIMIT, time_range=None):
     """
     base_query = """
     SELECT original_channel_id, original_message_ts, COUNT(*) as reaction_count, 
-           GROUP_CONCAT(giver_id) as givers
+           GROUP_CONCAT(giver_id) as givers, GROUP_CONCAT(recipient_id) as recipients,
+           GROUP_CONCAT(note) as notes
     FROM transactions
     WHERE original_message_ts IS NOT NULL AND original_channel_id IS NOT NULL
     """
@@ -334,4 +335,4 @@ def get_history(lines=config.DEFAULT_HISTORY_LINES, giver_id=None, recipient_id=
         logger.error(f"Error fetching history: {e}")
     finally:
         close_db(conn)
-    return history                            
+    return history                                
