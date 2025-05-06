@@ -4,15 +4,15 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
 
 ## Features
 
-*   Give tacos: `/tacos_give <amount> <@user> <note>`
-*   View Leaderboard: `/tacos_leaderboard`
-*   View Stats: `/tacos_stats` (Shows leaderboard for now)
-*   View Giving History: `/tacos_history [@user] [lines]`
-*   View Receiving History: `/tacos_received [lines]`
-*   Get Help: `/tacos_help`
-*   Check Remaining Tacos: `/tacos_remaining [@user]`
-*   Rolling 24-hour giving limit (configurable).
-*   Optional public announcement channel for taco grants.
+*   Give units: `/{unit_name}_give <amount> <@user> <note>`
+*   View Stats: `/{unit_name}_stats` (Shows leaderboard)
+*   View Giving History: `/{unit_name}_history [@user] [lines]`
+*   View Receiving History: `/{unit_name}_received [lines]`
+*   Get Help: `/{unit_name}_help`
+*   Check Remaining Units: `/{unit_name}_remaining [@user]`
+*   Configurable unit name (defaults to "kudos")
+*   Rolling 24-hour giving limit (configurable)
+*   Optional public announcement channel for unit grants
 
 ## Setup
 
@@ -62,35 +62,50 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
         *   Follow the prompts to authorize the app.
         *   After installation, you will see the **"Bot User OAuth Token" (it starts with `xoxb-`)**. **Copy this token**. You will need this for the `SLACK_BOT_TOKEN` in your `.env` file.
     *   **Slash Commands:**
-        *   In the left sidebar under "Features", click on **"Slash Commands"**.
-        *   Create the following commands:
-            *   Command: `/tacos` (Suggest Description: `Give tacos to a user. Usage: /tacos give <amount> <@user> <note>`)
-            *   Command: `/tacos_leaderboard` (Suggest Description: `Show the taco leaderboard`)
-            *   Command: `/tacos_stats` (Suggest Description: `Show taco stats (leaderboard)`)
-            *   Command: `/tacos_history` (Suggest Description: `Show taco giving/receiving history. Usage: [@user] [lines]`)
-            *   Command: `/tacos_received` (Suggest Description: `Show your taco receiving history. Usage: [lines]`)
-            *   Command: `/tacos_help` (Suggest Description: `Show help information for the Taco Bot`)
-            *   Command: `/tacos_remaining` (Suggest Description: `Check how many tacos you (or @user) can give. Usage: [@user]`)
+        *   Instead of manually creating slash commands, use the generated `manifest.yml` file:
+            *   In the left sidebar under "Features", click on **"App Manifest"**.
+            *   Click on **"Update from manifest"**.
+            *   Paste the contents of the generated `manifest.yml` file.
+            *   Click **"Save Changes"**.
+            
+        *   Alternatively, you can manually create the commands with your chosen unit name:
+            *   Command: `/{unit_name}_give` (Suggest Description: `Give {unit_name_plural} to a user. Usage: /{unit_name}_give <amount> <@user> <note>`)
+            *   Command: `/{unit_name}_stats` (Suggest Description: `Show {unit_name} statistics (leaderboard)`)
+            *   Command: `/{unit_name}_history` (Suggest Description: `Show {unit_name} giving/receiving history. Usage: [@user] [lines]`)
+            *   Command: `/{unit_name}_received` (Suggest Description: `Show your {unit_name} receiving history. Usage: [lines]`)
+            *   Command: `/{unit_name}_help` (Suggest Description: `Show help information for the {unit_name_cap} Bot`)
+            *   Command: `/{unit_name}_remaining` (Suggest Description: `Check how many {unit_name_plural} you (or @user) can give. Usage: [@user]`)
 
 5.  **Configure Environment Variables:**
-    *   Create a file named `.env` in the project root directory (a template is provided).
+    *   Create a file named `.env` in the project root directory (use `.env.example` as a template).
     *   Add the following variables:
         ```dotenv
+        # Unit Configuration (Optional)
+        UNIT_NAME="kudos"  # Default is "kudos" if not specified
+        UNIT_NAME_PLURAL="kudos"  # Default is UNIT_NAME + "s" if not specified
+        PRIMARY_EMOJI="star-struck"
+        
         # Slack API Tokens (Required)
-        SLACK_BOT_TOKEN="xoxb-..." # Your Bot User OAuth Token
-        SLACK_APP_TOKEN="xapp-..." # Your App-Level Token
-
-        # Database Configuration (Optional - Defaults to tacos.db)
-        # DATABASE_FILE="tacos.db"
-
+        SLACK_BOT_TOKEN=xoxb-your-token
+        SLACK_APP_TOKEN=xapp-your-token
+        
+        # Database Configuration (Optional - Defaults to kudos.db)
+        # DATABASE_FILE="kudos.db"
+        
         # Bot Configuration (Optional - Defaults shown)
         # DAILY_UNIT_LIMIT=5
-        # UNIT_ANNOUNCE_CHANNEL="tacos" # Channel name (no #) for public announcements
-        # UNIT_NAME="kudos" # The name of the unit (default: "kudos")
-        # UNIT_NAME_PLURAL="kudos" # The plural form of the unit name (default: unit_name + "s")
-        # PRIMARY_EMOJI="star-struck" # The primary emoji to use (default: "star-struck")
+        # UNIT_ANNOUNCE_CHANNEL="kudos-announce" # Channel name (no #) for public announcements
+        # UNIT_REACTION_EMOJI="star-struck" # Emoji name (without colons) to trigger reaction flow
         ```
     *   Replace the placeholder values with your actual tokens.
+
+6.  **Generate the Manifest:**
+    *   After setting up your `.env` file, run:
+        ```bash
+        python3 scripts/generate_manifest.py
+        ```
+    *   This will create a `manifest.yml` file with the correct command names based on your configured unit name.
+    *   If your unit name is not "taco" or "tacos", the manifest will include both the new unit-based commands and legacy "tacos_" commands for backward compatibility.
 
 ## Running the Bot
 
@@ -100,8 +115,8 @@ A simple Slack bot built with Python (`slack_bolt`) and SQLite to give and track
     ```bash
     python -m src.bot
     ```
-4.  The bot will connect using Socket Mode and log informational messages to the console. You should see a message like "Starting Taco Bot using Socket Mode..." and then "Bolt app is running!"
+4.  The bot will connect using Socket Mode and log informational messages to the console. You should see a message like "Starting {Unit Name} Bot using Socket Mode..." and then "Bolt app is running!"
 
 ## Database
 
-The bot uses an SQLite database file (default: `tacos.db`) created in the project root to store transaction history. This file is excluded from Git by the `.gitignore` file.    
+The bot uses an SQLite database file (default: `tacos.db`) created in the project root to store transaction history. This file is excluded from Git by the `.gitignore` file.            
